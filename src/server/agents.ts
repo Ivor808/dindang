@@ -1,12 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
-import { dockerProvider } from "~/lib/docker-provider";
+import { dockerProvider } from "./docker-provider";
+import { getSettings } from "~/lib/config";
 import { randomName } from "~/lib/names";
 
-export const listAgents = createServerFn({ method: "GET" }).handler(
-  async () => {
-    return dockerProvider.list();
-  }
-);
+export const listAgents = createServerFn({ method: "GET" }).handler(async () => {
+  return dockerProvider.list();
+});
 
 export const getAgent = createServerFn({ method: "GET" })
   .inputValidator((name: string) => name)
@@ -14,17 +13,30 @@ export const getAgent = createServerFn({ method: "GET" })
     return dockerProvider.getStatus(name);
   });
 
-export const createAgent = createServerFn({ method: "POST" }).handler(
-  async () => {
-    const name = randomName();
-    return dockerProvider.create(name);
-  }
-);
+export const createAgent = createServerFn({ method: "POST" })
+  .inputValidator((data: { projectId: string }) => data)
+  .handler(async ({ data }) => {
+    const settings = getSettings();
+    const project = settings.projects.find((p) => p.id === data.projectId);
+    if (!project) throw new Error("Project not found");
+    if (!settings.anthropicApiKey) throw new Error("Anthropic API key not configured — go to Settings");
 
-export const startAgent = createServerFn({ method: "POST" })
+    const name = randomName();
+    return dockerProvider.create({
+      name,
+      projectId: project.id,
+      repoUrl: project.repoUrl,
+      githubToken: settings.githubToken,
+      anthropicApiKey: settings.anthropicApiKey,
+      setupCommand: project.setupCommand,
+      dindangHost: "host.docker.internal:3000",
+    });
+  });
+
+export const execAgent = createServerFn({ method: "POST" })
   .inputValidator((data: { name: string; command: string }) => data)
   .handler(async ({ data }) => {
-    await dockerProvider.start(data.name, data.command);
+    await dockerProvider.exec(data.name, data.command);
     return dockerProvider.getStatus(data.name);
   });
 
@@ -45,9 +57,5 @@ export const removeAgent = createServerFn({ method: "POST" })
 export const getAgentLogs = createServerFn({ method: "GET" })
   .inputValidator((name: string) => name)
   .handler(async ({ data: name }) => {
-    const parts: string[] = [];
-    for await (const chunk of dockerProvider.getLogs(name)) {
-      parts.push(chunk);
-    }
-    return parts.join("");
+    return dockerProvider.getLogs(name);
   });

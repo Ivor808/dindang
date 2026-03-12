@@ -1,0 +1,7 @@
+node_modules/
+.output/
+dist/
+*.log
+.vinxi/
+.vite/
+src/routeTree.gen.ts

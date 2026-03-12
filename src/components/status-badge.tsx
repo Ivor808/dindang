@@ -1,9 +1,9 @@
 import type { AgentStatus } from "~/lib/types";
 
 const styles: Record<AgentStatus, string> = {
-  idle: "bg-zinc-700 text-zinc-300",
-  running: "bg-blue-900 text-blue-300",
-  done: "bg-green-900 text-green-300",
+  provisioning: "bg-yellow-900 text-yellow-300",
+  ready: "bg-green-900 text-green-300",
+  busy: "bg-blue-900 text-blue-300",
   error: "bg-red-900 text-red-300",
 };
 

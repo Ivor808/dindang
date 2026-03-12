@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { Agent } from "~/lib/types";
 import { StatusBadge } from "./status-badge";
 
-export function AgentCard({ agent }: { agent: Agent }) {
+export function AgentCard({ agent, projectName }: { agent: Agent; projectName?: string }) {
   return (
     <Link
       to="/agent/$name"
@@ -13,10 +13,8 @@ export function AgentCard({ agent }: { agent: Agent }) {
         <span className="font-medium truncate">{agent.name}</span>
         <StatusBadge status={agent.status} />
       </div>
-      {agent.command && (
-        <p className="text-xs text-zinc-500 truncate font-mono">
-          {agent.command}
-        </p>
+      {projectName && (
+        <p className="text-xs text-zinc-500 truncate">{projectName}</p>
       )}
       <p className="text-xs text-zinc-600 mt-2">
         {new Date(agent.createdAt).toLocaleTimeString()}

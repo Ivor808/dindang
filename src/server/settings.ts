@@ -95,7 +95,7 @@ export const createMachineApi = createServerFn({ method: "POST" })
   .inputValidator(
     (data: {
       name: string;
-      type: "docker" | "ssh";
+      type: "server" | "terminal" | "local";
       host?: string;
       port?: number;
       username?: string;

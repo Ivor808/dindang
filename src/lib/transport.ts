@@ -29,12 +29,14 @@ export interface Transport {
 export interface AgentRuntimeOptions {
   name: string;
   machineId: string;
+  orgId: string;
   env: Record<string, string>;
   devPort?: number;
 }
 
 export interface AgentRuntime {
   create(options: AgentRuntimeOptions): Promise<{ remoteId: string; hostPort?: number }>;
+  redeploy?(remoteId: string, options: AgentRuntimeOptions): Promise<{ remoteId: string; hostPort?: number }>;
   stop(remoteId: string): Promise<void>;
   remove(remoteId: string): Promise<void>;
   getTransport(remoteId: string): Promise<Transport>;

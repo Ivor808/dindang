@@ -1,6 +1,6 @@
 export type AgentStatus = "provisioning" | "ready" | "busy" | "error";
 export type MachineStatus = "connected" | "unreachable" | "unknown";
-export type MachineType = "docker" | "ssh";
+export type MachineType = "server" | "terminal" | "local";
 export type OrgRole = "owner" | "admin" | "member";
 
 export interface Agent {

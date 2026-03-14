@@ -97,6 +97,7 @@ export const createAgent = createServerFn({ method: "POST" })
     const { remoteId, hostPort } = await runtime.create({
       name,
       machineId: machine.id,
+      orgId,
       env,
       devPort: project.devPort ?? undefined,
     });
@@ -149,6 +150,70 @@ export const createAgent = createServerFn({ method: "POST" })
     }
 
     return rowToAgent(agentRecord);
+  });
+
+export const redeployAgent = createServerFn({ method: "POST" })
+  .inputValidator((name: string) => name)
+  .handler(async ({ data: name }) => {
+    const { userId, orgId } = await requireAuthWithOrg();
+    const result = await db
+      .select()
+      .from(agents)
+      .where(and(eq(agents.name, name), eq(agents.orgId, orgId)))
+      .limit(1);
+    if (result.length === 0) throw new Error("Agent not found");
+    const agent = result[0]!;
+
+    if (!agent.remoteId || !agent.machineId || !agent.projectId)
+      throw new Error("Agent is missing required fields for redeploy");
+
+    const machine = await getMachine(agent.machineId, orgId);
+    const runtime = getRuntimeForMachine(machine);
+    if (!runtime.redeploy) throw new Error("This machine type does not support redeploy");
+
+    // Get project for devPort
+    const projectRows = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, agent.projectId))
+      .limit(1);
+    const project = projectRows[0];
+
+    // Rebuild env
+    const env: Record<string, string> = {};
+    const credRows = await db
+      .select()
+      .from(userCredentials)
+      .where(and(eq(userCredentials.userId, agent.createdBy!), eq(userCredentials.provider, "github")))
+      .limit(1);
+    if (credRows.length > 0) {
+      const key = deriveKey(agent.createdBy!);
+      env.GITHUB_TOKEN = decrypt(credRows[0]!.encryptedToken, key);
+    }
+    const anthropicRows = await db
+      .select()
+      .from(userCredentials)
+      .where(and(eq(userCredentials.userId, agent.createdBy!), eq(userCredentials.provider, "anthropic")))
+      .limit(1);
+    if (anthropicRows.length > 0) {
+      const key = deriveKey(agent.createdBy!);
+      env.ANTHROPIC_API_KEY = decrypt(anthropicRows[0]!.encryptedToken, key);
+    }
+
+    const { remoteId, hostPort } = await runtime.redeploy(agent.remoteId, {
+      name: agent.name,
+      machineId: machine.id,
+      orgId,
+      env,
+      devPort: project?.devPort ?? undefined,
+    });
+
+    await db
+      .update(agents)
+      .set({ remoteId, hostPort, status: "ready" })
+      .where(eq(agents.id, agent.id));
+
+    return rowToAgent({ ...agent, remoteId, hostPort: hostPort ?? null, status: "ready" });
   });
 
 export const stopAgent = createServerFn({ method: "POST" })

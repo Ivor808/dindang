@@ -1,5 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
-import { getWebRequest } from "@tanstack/react-start/server";
+import { getRequest } from "@tanstack/react-start/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "~/db";
 import { orgMembers, orgs } from "~/db/schema";
@@ -26,7 +26,7 @@ function parseCookies(cookieHeader: string): { name: string; value: string }[] {
 }
 
 export async function requireAuth(): Promise<string> {
-  const request = getWebRequest();
+  const request = getRequest();
   const supabase = createSupabaseServerClient(request);
   const {
     data: { user },
@@ -83,7 +83,7 @@ export async function ensureOrg(userId: string): Promise<string> {
     .limit(1);
   if (membership.length > 0) return membership[0]!.orgId;
 
-  const request = getWebRequest();
+  const request = getRequest();
   const supabase = createSupabaseServerClient(request);
   const {
     data: { user },

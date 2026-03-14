@@ -9,8 +9,12 @@ function dindangWebSocket(): Plugin {
     name: "dindang-ws",
     configureServer(server) {
       server.httpServer?.on("listening", async () => {
-        const { attachTerminalWebSocket } = await import("./src/server/terminal.ts");
-        attachTerminalWebSocket(server.httpServer!);
+        try {
+          const mod = await server.ssrLoadModule("./src/server/terminal.ts");
+          (mod.attachTerminalWebSocket as (s: typeof server.httpServer) => void)(server.httpServer!);
+        } catch (e) {
+          console.error("Failed to attach terminal WebSocket:", e);
+        }
       });
     },
   };

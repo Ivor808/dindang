@@ -1,61 +1,211 @@
 import { createServerFn } from "@tanstack/react-start";
-import { dockerProvider } from "./docker-provider";
-import { getSettings } from "~/lib/config";
+import { eq, and } from "drizzle-orm";
+import { db } from "~/db";
+import { agents, projects, userCredentials } from "~/db/schema";
+import { requireAuthWithOrg } from "~/server/auth";
+import { getMachine, getRuntimeForMachine } from "~/server/machine-registry";
+import { setupAgent, repoNameFromUrl, validateRepoUrl } from "~/server/agent-setup";
+import { deriveKey, decrypt } from "~/lib/crypto";
 import { randomName } from "~/lib/names";
+import type { Agent } from "~/lib/types";
+
+function rowToAgent(row: typeof agents.$inferSelect): Agent {
+  return {
+    id: row.id,
+    name: row.name,
+    orgId: row.orgId,
+    projectId: row.projectId ?? "",
+    machineId: row.machineId ?? "",
+    createdBy: row.createdBy ?? "",
+    remoteId: row.remoteId ?? "",
+    workDir: row.workDir ?? "",
+    status: row.status,
+    createdAt: row.createdAt.toISOString(),
+    hostPort: row.hostPort ?? undefined,
+  };
+}
 
 export const listAgents = createServerFn({ method: "GET" }).handler(async () => {
-  return dockerProvider.list();
+  const { orgId } = await requireAuthWithOrg();
+  const rows = await db.select().from(agents).where(eq(agents.orgId, orgId));
+  return rows.map(rowToAgent);
 });
 
 export const getAgent = createServerFn({ method: "GET" })
   .inputValidator((name: string) => name)
   .handler(async ({ data: name }) => {
-    return dockerProvider.getStatus(name);
+    const { orgId } = await requireAuthWithOrg();
+    const result = await db
+      .select()
+      .from(agents)
+      .where(and(eq(agents.name, name), eq(agents.orgId, orgId)))
+      .limit(1);
+    if (result.length === 0) throw new Error("Agent not found");
+    return rowToAgent(result[0]!);
   });
 
 export const createAgent = createServerFn({ method: "POST" })
-  .inputValidator((data: { projectId: string }) => data)
+  .inputValidator((data: { projectId: string; machineId: string }) => data)
   .handler(async ({ data }) => {
-    const settings = getSettings();
-    const project = settings.projects.find((p) => p.id === data.projectId);
-    if (!project) throw new Error("Project not found");
-    if (!settings.anthropicApiKey) throw new Error("Anthropic API key not configured — go to Settings");
+    const { userId, orgId } = await requireAuthWithOrg();
+
+    // Validate project exists in org
+    const projectRows = await db
+      .select()
+      .from(projects)
+      .where(and(eq(projects.id, data.projectId), eq(projects.orgId, orgId)))
+      .limit(1);
+    if (projectRows.length === 0) throw new Error("Project not found");
+    const project = projectRows[0]!;
+
+    // Validate machine exists in org
+    const machine = await getMachine(data.machineId, orgId);
+
+    // Get runtime for this machine
+    const runtime = getRuntimeForMachine(machine);
 
     const name = randomName();
-    return dockerProvider.create({
-      name,
-      projectId: project.id,
-      repoUrl: project.repoUrl,
-      githubToken: settings.githubToken,
-      anthropicApiKey: settings.anthropicApiKey,
-      setupCommand: project.setupCommand,
-      dindangHost: "host.docker.internal:3000",
-    });
-  });
 
-export const execAgent = createServerFn({ method: "POST" })
-  .inputValidator((data: { name: string; command: string }) => data)
-  .handler(async ({ data }) => {
-    await dockerProvider.exec(data.name, data.command);
-    return dockerProvider.getStatus(data.name);
+    // Get user's GitHub token
+    let githubToken: string | undefined;
+    const credRows = await db
+      .select()
+      .from(userCredentials)
+      .where(and(eq(userCredentials.userId, userId), eq(userCredentials.provider, "github")))
+      .limit(1);
+    if (credRows.length > 0) {
+      const key = deriveKey(userId);
+      githubToken = decrypt(credRows[0]!.encryptedToken, key);
+    }
+
+    // Build env vars
+    const env: Record<string, string> = {};
+    if (githubToken) env.GITHUB_TOKEN = githubToken;
+
+    // Get Anthropic key
+    const anthropicRows = await db
+      .select()
+      .from(userCredentials)
+      .where(and(eq(userCredentials.userId, userId), eq(userCredentials.provider, "anthropic")))
+      .limit(1);
+    if (anthropicRows.length > 0) {
+      const key = deriveKey(userId);
+      env.ANTHROPIC_API_KEY = decrypt(anthropicRows[0]!.encryptedToken, key);
+    }
+
+    // Create the container/runtime
+    const { remoteId, hostPort } = await runtime.create({
+      name,
+      machineId: machine.id,
+      env,
+      devPort: project.devPort ?? undefined,
+    });
+
+    // Determine workDir
+    const repoUrl = project.repoUrl ? validateRepoUrl(project.repoUrl) : undefined;
+    const workDir = repoUrl ? `/home/${repoNameFromUrl(repoUrl)}` : "/root";
+
+    // Insert agent record
+    const agentRows = await db
+      .insert(agents)
+      .values({
+        orgId,
+        projectId: project.id,
+        machineId: machine.id,
+        createdBy: userId,
+        name,
+        remoteId,
+        workDir,
+        status: "provisioning",
+        hostPort,
+      })
+      .returning();
+    const agentRecord = agentRows[0]!;
+
+    // Background setup — don't await
+    if (repoUrl) {
+      const callbackUrl = process.env.DINDANG_CALLBACK_URL ?? "http://host.docker.internal:3000";
+      runtime
+        .getTransport(remoteId)
+        .then((transport) =>
+          setupAgent(transport, {
+            name,
+            repoUrl,
+            workDir,
+            githubToken,
+            setupCommand: project.setupCommand ?? undefined,
+            callbackUrl,
+          }),
+        )
+        .then(async () => {
+          await db.update(agents).set({ status: "ready" }).where(eq(agents.id, agentRecord.id));
+        })
+        .catch(async () => {
+          await db.update(agents).set({ status: "error" }).where(eq(agents.id, agentRecord.id));
+        });
+    } else {
+      // No repo to clone, mark as ready immediately
+      await db.update(agents).set({ status: "ready" }).where(eq(agents.id, agentRecord.id));
+    }
+
+    return rowToAgent(agentRecord);
   });
 
 export const stopAgent = createServerFn({ method: "POST" })
   .inputValidator((name: string) => name)
   .handler(async ({ data: name }) => {
-    await dockerProvider.stop(name);
-    return dockerProvider.getStatus(name);
+    const { orgId } = await requireAuthWithOrg();
+    const result = await db
+      .select()
+      .from(agents)
+      .where(and(eq(agents.name, name), eq(agents.orgId, orgId)))
+      .limit(1);
+    if (result.length === 0) throw new Error("Agent not found");
+    const agent = result[0]!;
+
+    if (!agent.remoteId) throw new Error("Agent has no remote ID");
+    if (!agent.machineId) throw new Error("Agent has no machine");
+
+    const machine = await getMachine(agent.machineId, orgId);
+    const runtime = getRuntimeForMachine(machine);
+    await runtime.stop(agent.remoteId);
+
+    await db
+      .update(agents)
+      .set({ status: "ready" })
+      .where(eq(agents.id, agent.id));
+
+    return rowToAgent({ ...agent, status: "ready" });
   });
 
 export const removeAgent = createServerFn({ method: "POST" })
   .inputValidator((name: string) => name)
   .handler(async ({ data: name }) => {
-    await dockerProvider.remove(name);
-    return { ok: true };
-  });
+    const { userId, orgId } = await requireAuthWithOrg();
+    const result = await db
+      .select()
+      .from(agents)
+      .where(and(eq(agents.name, name), eq(agents.orgId, orgId)))
+      .limit(1);
+    if (result.length === 0) throw new Error("Agent not found");
+    const agent = result[0]!;
 
-export const getAgentLogs = createServerFn({ method: "GET" })
-  .inputValidator((name: string) => name)
-  .handler(async ({ data: name }) => {
-    return dockerProvider.getLogs(name);
+    // Members can only remove their own agents
+    if (agent.createdBy && agent.createdBy !== userId) {
+      // Check if user is admin or owner — they can remove any agent
+      const { requireRole } = await import("~/server/auth");
+      await requireRole(userId, orgId, "admin");
+    }
+
+    if (agent.remoteId && agent.machineId) {
+      const machine = await getMachine(agent.machineId, orgId);
+      const runtime = getRuntimeForMachine(machine);
+      await runtime.remove(agent.remoteId);
+    }
+
+    await db
+      .delete(agents)
+      .where(eq(agents.id, agent.id));
+
+    return { ok: true };
   });

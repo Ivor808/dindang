@@ -1,40 +1,59 @@
 import { createFileRoute, useRouter, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { listAgents, createAgent } from "~/server/agents";
-import { listProjects } from "~/server/settings";
+import { listProjects, listMachinesApi } from "~/server/settings";
 import { AgentCard } from "~/components/agent-card";
-import type { Project } from "~/lib/types";
+import { toErrorMessage } from "~/lib/errors";
+import type { Project, Machine } from "~/lib/types";
 
 export const Route = createFileRoute("/")({
   loader: async () => {
-    const [agents, projects] = await Promise.all([listAgents(), listProjects()]);
-    return { agents, projects };
+    const [agents, projects, machines] = await Promise.all([
+      listAgents(),
+      listProjects(),
+      listMachinesApi(),
+    ]);
+    return { agents, projects, machines };
   },
   component: Dashboard,
 });
 
 function Dashboard() {
-  const { agents, projects } = Route.useLoaderData();
+  const { agents, projects, machines } = Route.useLoaderData();
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string>(
-    () => projects.find((p: Project) => p.isDefault)?.id ?? projects[0]?.id ?? ""
+    () => projects.find((p: Project) => p.isDefault)?.id ?? projects[0]?.id ?? "",
+  );
+  const [selectedMachine, setSelectedMachine] = useState<string>(
+    () => machines.find((m: Machine) => m.enabled)?.id ?? "",
   );
 
   const handleCreate = async () => {
-    if (!selectedProject) return;
+    if (!selectedProject || !selectedMachine) return;
     setCreating(true);
     setError(null);
     try {
-      await createAgent({ data: { projectId: selectedProject } });
+      await createAgent({
+        data: { projectId: selectedProject, machineId: selectedMachine },
+      });
       await router.invalidate();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(toErrorMessage(e));
     } finally {
       setCreating(false);
     }
   };
+
+  const hasProvisioning = agents.some((a) => a.status === "provisioning");
+
+  // Auto-refresh while any agent is provisioning
+  useEffect(() => {
+    if (!hasProvisioning) return;
+    const interval = setInterval(() => router.invalidate(), 3000);
+    return () => clearInterval(interval);
+  }, [hasProvisioning, router]);
 
   const projectMap = new Map(projects.map((p: Project) => [p.id, p.name]));
 
@@ -56,9 +75,25 @@ function Dashboard() {
                   </option>
                 ))}
               </select>
+              <select
+                value={selectedMachine}
+                onChange={(e) => setSelectedMachine(e.target.value)}
+                className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-zinc-500 cursor-pointer"
+              >
+                {machines.map((m: Machine) => (
+                  <option
+                    key={m.id}
+                    value={m.id}
+                    disabled={!m.enabled}
+                    className={!m.enabled ? "text-zinc-600" : ""}
+                  >
+                    {m.name} ({m.type})
+                  </option>
+                ))}
+              </select>
               <button
                 onClick={handleCreate}
-                disabled={creating}
+                disabled={creating || !selectedMachine}
                 className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
               >
                 {creating ? "creating..." : "+ new"}

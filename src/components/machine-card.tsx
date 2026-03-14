@@ -28,9 +28,11 @@ export function MachineCard({
         </span>
       </div>
       <p className="text-xs text-zinc-500">
-        {machine.type === "ssh"
-          ? `${machine.username}@${machine.host}:${machine.port}`
-          : "Local Docker"}
+        {machine.type === "local"
+          ? "Local Docker"
+          : machine.type === "server" || machine.type === "terminal"
+            ? `${machine.username}@${machine.host}:${machine.port}`
+            : machine.type}
       </p>
       <div className="flex gap-2 mt-3">
         <button

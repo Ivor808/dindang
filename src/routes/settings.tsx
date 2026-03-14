@@ -102,6 +102,7 @@ function ProjectsTab({
   router: ReturnType<typeof useRouter>;
 }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [setupCmd, setSetupCmd] = useState("");
@@ -109,24 +110,52 @@ function ProjectsTab({
   const [isDefault, setIsDefault] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleAdd = async () => {
+  const resetForm = () => {
+    setProjectName("");
+    setRepoUrl("");
+    setSetupCmd("");
+    setDevPort("");
+    setIsDefault(false);
+    setEditingId(null);
+  };
+
+  const startEdit = (p: Project) => {
+    setEditingId(p.id);
+    setProjectName(p.name);
+    setRepoUrl(p.repoUrl ?? "");
+    setSetupCmd(p.setupCommand ?? "");
+    setDevPort(p.devPort ? String(p.devPort) : "");
+    setIsDefault(p.isDefault);
+    setShowForm(true);
+  };
+
+  const handleSubmit = async () => {
     if (!projectName.trim() || !repoUrl.trim()) return;
     setError(null);
     try {
-      await createProject({
-        data: {
-          name: projectName.trim(),
-          repoUrl: repoUrl.trim(),
-          setupCommand: setupCmd.trim() || undefined,
-          devPort: devPort ? parseInt(devPort, 10) : undefined,
-          isDefault,
-        },
-      });
-      setProjectName("");
-      setRepoUrl("");
-      setSetupCmd("");
-      setDevPort("");
-      setIsDefault(false);
+      if (editingId) {
+        await editProject({
+          data: {
+            id: editingId,
+            name: projectName.trim(),
+            repoUrl: repoUrl.trim(),
+            setupCommand: setupCmd.trim() || undefined,
+            devPort: devPort ? parseInt(devPort, 10) : undefined,
+            isDefault,
+          },
+        });
+      } else {
+        await createProject({
+          data: {
+            name: projectName.trim(),
+            repoUrl: repoUrl.trim(),
+            setupCommand: setupCmd.trim() || undefined,
+            devPort: devPort ? parseInt(devPort, 10) : undefined,
+            isDefault,
+          },
+        });
+      }
+      resetForm();
       setShowForm(false);
       await router.invalidate();
     } catch (e) {
@@ -159,7 +188,7 @@ function ProjectsTab({
           Projects
         </h2>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}
           className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs transition-colors cursor-pointer"
         >
           {showForm ? "cancel" : "+ add project"}
@@ -229,11 +258,11 @@ function ProjectsTab({
             </label>
           </div>
           <button
-            onClick={handleAdd}
+            onClick={handleSubmit}
             disabled={!projectName.trim() || !repoUrl.trim()}
             className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
           >
-            add project
+            {editingId ? "save changes" : "add project"}
           </button>
         </div>
       )}
@@ -269,6 +298,12 @@ function ProjectsTab({
                 )}
               </div>
               <div className="flex gap-2 shrink-0">
+                <button
+                  onClick={() => startEdit(project)}
+                  className="text-xs text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                >
+                  edit
+                </button>
                 {!project.isDefault && (
                   <button
                     onClick={() => handleSetDefault(project.id)}
@@ -303,7 +338,7 @@ function MachinesTab({
 }) {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
-  const [type, setType] = useState<"docker" | "ssh">("docker");
+  const [type, setType] = useState<"server" | "terminal">("server");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("");
@@ -313,7 +348,7 @@ function MachinesTab({
 
   const resetForm = () => {
     setName("");
-    setType("docker");
+    setType("server");
     setHost("");
     setPort("22");
     setUsername("");
@@ -329,7 +364,7 @@ function MachinesTab({
         data: {
           name: name.trim(),
           type,
-          ...(type === "ssh"
+          ...(type === "server" || type === "terminal"
             ? {
                 host: host.trim(),
                 port: parseInt(port, 10) || 22,
@@ -400,14 +435,14 @@ function MachinesTab({
             <label className="block text-xs text-zinc-500 mb-1">Type</label>
             <select
               value={type}
-              onChange={(e) => setType(e.target.value as "docker" | "ssh")}
+              onChange={(e) => setType(e.target.value as "server" | "terminal")}
               className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-500 cursor-pointer"
             >
-              <option value="docker">Docker</option>
-              <option value="ssh">SSH</option>
+              <option value="server">Server (managed Docker)</option>
+              <option value="terminal">Terminal (direct SSH)</option>
             </select>
           </div>
-          {type === "ssh" && (
+          {(type === "server" || type === "terminal") && (
             <>
               <div>
                 <label className="block text-xs text-zinc-500 mb-1">Host</label>

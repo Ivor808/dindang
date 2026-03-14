@@ -108,7 +108,16 @@ async function handleConnection(ws: WebSocket, agentName: string): Promise<void>
         }
       }
 
-      pty.stream.write(data);
+      if (Buffer.isBuffer(data)) {
+        pty.stream.write(data);
+      } else if (typeof data === "string") {
+        pty.stream.write(data);
+      } else if (data instanceof ArrayBuffer) {
+        pty.stream.write(Buffer.from(data));
+      } else {
+        // data is Buffer[]
+        pty.stream.write(Buffer.concat(data as Buffer[]));
+      }
     });
 
     ws.on("close", cleanup);

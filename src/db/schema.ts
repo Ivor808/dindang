@@ -34,7 +34,7 @@ export const machines = pgTable("machines", {
     .notNull()
     .references(() => orgs.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  type: text("type", { enum: ["docker", "ssh"] }).notNull(),
+  type: text("type", { enum: ["server", "terminal", "local"] }).notNull(),
   host: text("host").notNull(),
   port: integer("port").default(22).notNull(),
   username: text("username"),

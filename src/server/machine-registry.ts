@@ -24,7 +24,7 @@ export async function createMachine(
   orgId: string,
   data: {
     name: string;
-    type: "docker" | "ssh";
+    type: "server" | "terminal" | "local";
     host?: string;
     port?: number;
     username?: string;
@@ -39,9 +39,9 @@ export async function createMachine(
   }
 
   // Validate SSH fields
-  if (data.type === "ssh") {
-    if (!data.host) throw new Error("Host is required for SSH machines");
-    if (!data.username) throw new Error("Username is required for SSH machines");
+  if (data.type === "server" || data.type === "terminal") {
+    if (!data.host) throw new Error("Host is required for SSH-based machines");
+    if (!data.username) throw new Error("Username is required for SSH-based machines");
     if (data.port && (data.port < 1 || data.port > 65535)) {
       throw new Error("Port must be between 1 and 65535");
     }
@@ -117,10 +117,10 @@ export function getRuntimeForMachine(machine: {
   encryptedCredential?: string | null;
   orgId: string;
 }): AgentRuntime {
-  if (machine.type === "docker") {
+  if (machine.type === "local") {
     return new DockerAgentRuntime();
   }
-  if (machine.type === "ssh") {
+  if (machine.type === "terminal") {
     let credential: string | undefined;
     if (machine.encryptedCredential) {
       const key = deriveKey(machine.orgId);
@@ -134,6 +134,9 @@ export function getRuntimeForMachine(machine: {
         ? { privateKey: credential }
         : { password: credential }),
     });
+  }
+  if (machine.type === "server") {
+    throw new Error("Server runtime not yet implemented");
   }
   throw new Error(`Unsupported machine type: ${machine.type}`);
 }

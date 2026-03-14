@@ -5,6 +5,7 @@ import type { AgentRuntime } from "~/lib/transport";
 import { DockerAgentRuntime } from "~/server/runtimes/docker";
 import { deriveKey, encrypt, decrypt } from "~/lib/crypto";
 import { SSHAgentRuntime } from "~/server/runtimes/ssh";
+import { ServerAgentRuntime } from "~/server/runtimes/server";
 
 export async function listMachines(orgId: string) {
   return db.select().from(machines).where(eq(machines.orgId, orgId));
@@ -136,7 +137,19 @@ export function getRuntimeForMachine(machine: {
     });
   }
   if (machine.type === "server") {
-    throw new Error("Server runtime not yet implemented");
+    let credential: string | undefined;
+    if (machine.encryptedCredential) {
+      const key = deriveKey(machine.orgId);
+      credential = decrypt(machine.encryptedCredential, key);
+    }
+    return new ServerAgentRuntime({
+      host: machine.host!,
+      port: machine.port ?? 22,
+      username: machine.username!,
+      ...(machine.authMethod === "key"
+        ? { privateKey: credential }
+        : { password: credential }),
+    });
   }
   throw new Error(`Unsupported machine type: ${machine.type}`);
 }

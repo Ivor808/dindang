@@ -42,7 +42,7 @@ export async function setupAgent(transport: Transport, options: AgentSetupOption
   const hasGit = await transport.exec(["which", "git"]);
   if (hasGit.exitCode !== 0) {
     onProgress("Installing system dependencies...");
-    await transport.exec(["bash", "-c", "apt-get update -qq && apt-get install -y -qq git curl build-essential sudo procps psmisc lsof"]);
+    await transport.exec(["bash", "-c", "apt-get update -qq && apt-get install -y -qq git curl build-essential sudo procps psmisc lsof tmux"]);
   }
 
   // Create non-root dev user with passwordless sudo

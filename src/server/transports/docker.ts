@@ -32,8 +32,11 @@ export class DockerTransport implements Transport {
 
   async openPTY(options?: PTYOptions): Promise<PTYSession> {
     const cwd = options?.cwd ?? "/home/dev";
+    // Use tmux so the session survives WebSocket disconnects.
+    // -A = attach if session "main" exists, otherwise create it.
+    // -c = start directory (only applies when creating a new session).
     const exec = await this.container.exec({
-      Cmd: ["bash", "-l"],
+      Cmd: ["bash", "-lc", `tmux new-session -A -s main -c ${cwd}`],
       User: "dev",
       AttachStdin: true,
       AttachStdout: true,

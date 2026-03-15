@@ -31,9 +31,10 @@ export class ServerTransport implements Transport {
       rows: options?.rows,
     });
 
-    // Write docker exec command into the SSH shell
+    // Write docker exec command into the SSH shell — uses tmux so the session
+    // survives WebSocket disconnects (tmux detaches instead of killing the process)
     const cwd = options?.cwd ?? "/home/dev";
-    pty.stream.write(`docker exec -it -u dev -w ${cwd} -e HOME=/home/dev -e PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin ${this.containerId} bash -l\n`);
+    pty.stream.write(`docker exec -it -u dev -w ${cwd} -e HOME=/home/dev -e PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin ${this.containerId} bash -lc 'tmux new-session -A -s main -c ${cwd}'\n`);
 
     return pty;
   }

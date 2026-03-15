@@ -5,27 +5,8 @@ import { db } from "~/db";
 import { agents, machines } from "~/db/schema";
 import { getRuntimeForMachine } from "~/server/machine-registry";
 import { toErrorMessage } from "~/lib/errors";
-import type { PTYSession } from "~/lib/transport";
 
 const TERMINAL_PATH_RE = /^\/ws\/terminal\/(.+)$/;
-
-/** Max scrollback bytes to buffer for reconnection replay */
-const MAX_SCROLLBACK = 256 * 1024; // 256 KB
-
-interface PersistentSession {
-  pty: PTYSession;
-  scrollback: Buffer[];
-  scrollbackSize: number;
-  attachedWs: WebSocket | null;
-  /** Timer that destroys the session after prolonged disconnect */
-  idleTimer: ReturnType<typeof setTimeout> | null;
-}
-
-/** PTY sessions keyed by agent name — survive WebSocket disconnects */
-const sessions = new Map<string, PersistentSession>();
-
-/** How long an unattached session stays alive before being cleaned up */
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export function attachTerminalWebSocket(server: Server): void {
   const wss = new WebSocketServer({ noServer: true });
@@ -41,55 +22,8 @@ export function attachTerminalWebSocket(server: Server): void {
   });
 }
 
-/** Destroy a persistent session and clean up all resources */
-function destroySession(agentName: string): void {
-  const session = sessions.get(agentName);
-  if (!session) return;
-  if (session.idleTimer) clearTimeout(session.idleTimer);
-  session.pty.close();
-  sessions.delete(agentName);
-}
-
-/** Detach the WebSocket from a session without killing the PTY */
-function detachWs(agentName: string): void {
-  const session = sessions.get(agentName);
-  if (!session) return;
-  session.attachedWs = null;
-
-  // Start idle timer — if nobody reconnects, clean up
-  if (session.idleTimer) clearTimeout(session.idleTimer);
-  session.idleTimer = setTimeout(() => destroySession(agentName), IDLE_TIMEOUT_MS);
-}
-
 async function handleConnection(ws: WebSocket, agentName: string): Promise<void> {
   try {
-    const existing = sessions.get(agentName);
-
-    if (existing) {
-      // Reconnect to existing session
-      if (existing.idleTimer) {
-        clearTimeout(existing.idleTimer);
-        existing.idleTimer = null;
-      }
-
-      // Detach previous WebSocket if still connected
-      if (existing.attachedWs && existing.attachedWs.readyState === WebSocket.OPEN) {
-        existing.attachedWs.close();
-      }
-      existing.attachedWs = ws;
-
-      // Replay scrollback buffer so the user sees previous output
-      for (const chunk of existing.scrollback) {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(chunk);
-        }
-      }
-
-      wireWsToSession(ws, agentName, existing);
-      return;
-    }
-
-    // No existing session — create a new one
     const agentRows = await db
       .select()
       .from(agents)
@@ -114,52 +48,62 @@ async function handleConnection(ws: WebSocket, agentName: string): Promise<void>
 
     const cwd = agent.workDir ?? "/home/dev";
     const cwdExists = await transport.fileExists(cwd);
+    // openPTY uses tmux internally — each connection attaches to the same
+    // tmux session ("main"). When this WS closes, tmux detaches and the
+    // process (e.g. Claude Code) keeps running inside the container.
     const pty = await transport.openPTY({ cwd: cwdExists ? cwd : "/home/dev" });
 
-    const session: PersistentSession = {
-      pty,
-      scrollback: [],
-      scrollbackSize: 0,
-      attachedWs: ws,
-      idleTimer: null,
-    };
-    sessions.set(agentName, session);
-
-    // PTY output → scrollback buffer + WebSocket
+    // Transport → browser
     pty.stream.on("data", (chunk: Buffer) => {
-      // Append to scrollback
-      session.scrollback.push(chunk);
-      session.scrollbackSize += chunk.length;
-
-      // Trim scrollback if over limit
-      while (session.scrollbackSize > MAX_SCROLLBACK && session.scrollback.length > 1) {
-        const removed = session.scrollback.shift()!;
-        session.scrollbackSize -= removed.length;
-      }
-
-      // Forward to attached WebSocket
-      if (session.attachedWs?.readyState === WebSocket.OPEN) {
-        session.attachedWs.send(chunk);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(chunk);
       }
     });
 
+    const cleanup = () => {
+      pty.close();
+    };
+
     pty.stream.on("end", () => {
-      if (session.attachedWs?.readyState === WebSocket.OPEN) {
-        session.attachedWs.send("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
-        session.attachedWs.close();
-      }
-      destroySession(agentName);
+      if (ws.readyState === WebSocket.OPEN) ws.close();
+      cleanup();
     });
 
     pty.stream.on("error", () => {
-      if (session.attachedWs?.readyState === WebSocket.OPEN) {
-        session.attachedWs.send("\r\n\x1b[31m[stream error]\x1b[0m\r\n");
-        session.attachedWs.close();
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send("\r\n\x1b[31m[stream error]\x1b[0m\r\n");
+        ws.close();
       }
-      destroySession(agentName);
+      cleanup();
     });
 
-    wireWsToSession(ws, agentName, session);
+    // Browser → transport
+    ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+      const buf = Buffer.isBuffer(data)
+        ? data
+        : data instanceof ArrayBuffer
+          ? Buffer.from(data)
+          : Buffer.concat(data);
+
+      // Check first byte for '{' — control messages (resize)
+      if (buf[0] === 0x7b) {
+        try {
+          const ctrl = JSON.parse(buf.toString());
+          if (ctrl.type === "resize" && ctrl.cols && ctrl.rows) {
+            pty.resize(ctrl.cols, ctrl.rows);
+            return;
+          }
+        } catch {
+          // not JSON, treat as regular input
+        }
+      }
+
+      pty.stream.write(buf);
+    });
+
+    // When WS closes, the docker exec ends and tmux detaches — process stays alive
+    ws.on("close", cleanup);
+    ws.on("error", cleanup);
   } catch (e) {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(`\r\nFailed to connect: ${toErrorMessage(e)}\r\n`);
@@ -168,37 +112,8 @@ async function handleConnection(ws: WebSocket, agentName: string): Promise<void>
   }
 }
 
-/** Wire a WebSocket's input/close events to a persistent session */
-function wireWsToSession(ws: WebSocket, agentName: string, session: PersistentSession): void {
-  ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
-    const buf = Buffer.isBuffer(data)
-      ? data
-      : data instanceof ArrayBuffer
-        ? Buffer.from(data)
-        : Buffer.concat(data);
-
-    // Fast path: check first byte for '{' before attempting JSON parse
-    if (buf[0] === 0x7b) {
-      try {
-        const ctrl = JSON.parse(buf.toString());
-        if (ctrl.type === "resize" && ctrl.cols && ctrl.rows) {
-          session.pty.resize(ctrl.cols, ctrl.rows);
-          return;
-        }
-      } catch {
-        // not JSON, treat as regular input
-      }
-    }
-
-    session.pty.stream.write(buf);
-  });
-
-  // On WebSocket close, detach but keep PTY alive
-  ws.on("close", () => detachWs(agentName));
-  ws.on("error", () => detachWs(agentName));
-}
-
-/** Force-destroy a session for an agent (called on agent removal) */
-export function destroyAgentSession(agentName: string): void {
-  destroySession(agentName);
+/** No-op — tmux sessions live inside the container, not in server memory.
+ *  Kept for API compatibility with agents.ts imports. */
+export function destroyAgentSession(_agentName: string): void {
+  // tmux session is destroyed when the container is removed
 }

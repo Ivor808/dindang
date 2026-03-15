@@ -35,7 +35,8 @@ export class ServerTransport implements Transport {
     // survives WebSocket disconnects (tmux detaches instead of killing the process).
     // -d on attach-session detaches stale clients so tmux uses the current terminal size.
     const cwd = options?.cwd ?? "/home/dev";
-    const tmuxCmd = `tmux has-session -t main 2>/dev/null && tmux attach-session -dt main || tmux new-session -s main -c '${cwd}'`;
+    const session = options?.sessionName ?? "main";
+    const tmuxCmd = `tmux has-session -t ${session} 2>/dev/null && tmux attach-session -dt ${session} || tmux new-session -s ${session} -c '${cwd}'`;
     pty.stream.write(`docker exec -it -u dev -w ${cwd} -e HOME=/home/dev -e PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin ${this.containerId} bash -lc '${tmuxCmd}'\n`);
 
     return pty;

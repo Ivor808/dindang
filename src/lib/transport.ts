@@ -9,6 +9,7 @@ export interface PTYOptions {
   rows?: number;
   env?: Record<string, string>;
   cwd?: string;
+  sessionName?: string;
 }
 
 export interface PTYSession {

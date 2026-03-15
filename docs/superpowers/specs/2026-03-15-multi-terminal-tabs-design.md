@@ -68,19 +68,25 @@ tmux has-session -t {sessionName} 2>/dev/null && tmux attach-session -dt {sessio
 
 ## Session Cleanup
 
-When a tab is closed, the server kills the associated tmux session(s) inside the container (`tmux kill-session -t {sessionName}`). This ensures no orphaned sessions accumulate.
+Three mechanisms ensure no orphaned tmux sessions accumulate:
 
-Implementation options for the kill:
-1. Send a control message over the existing WebSocket before closing (e.g., `{ type: "kill-session" }`)
-2. New HTTP endpoint `POST /api/terminal/{agentName}/{sessionName}/kill`
+### 1. On tab close / unsplit
+Kill the associated tmux session(s) immediately. Send a `{ type: "kill-session" }` control message over the WebSocket before closing it. The server runs `tmux kill-session -t {sessionName}` inside the container.
 
-Option 1 is simpler — no new endpoint needed.
+### 2. On page load (reconciliation)
+The client is the source of truth for which sessions should exist. On page load, after restoring the layout from localStorage, the client sends a `{ type: "sync-sessions", sessions: ["term-1", "term-3"] }` message on its first WebSocket connection. The server lists all tmux sessions in the container and kills any not in the client's list.
+
+This handles:
+- User closed the browser without closing tabs (sessions survive, cleaned up on next visit)
+- User navigated away (same)
+- Stale layouts from a removed/recreated agent (sessions don't exist, get created fresh)
+
+### 3. Container removal
+All tmux sessions die with the container. No cleanup needed.
 
 ## Persistence
 
 Layout saved to `localStorage` on every change (tab create/close/rename, split toggle). Restored on page load. If localStorage has no entry, use default layout.
-
-Stale layouts (agent removed and recreated) are self-healing: tmux sessions that don't exist get created fresh on connect.
 
 ## No DB Changes
 

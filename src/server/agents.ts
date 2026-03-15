@@ -5,6 +5,7 @@ import { agents, machines, projects, userCredentials } from "~/db/schema";
 import { requireAuthWithOrg } from "~/server/auth";
 import { getMachine, getRuntimeForMachine } from "~/server/machine-registry";
 import { setupAgent, repoNameFromUrl, validateRepoUrl, asUser } from "~/server/agent-setup";
+import { destroyAgentSession } from "~/server/terminal";
 import { deriveKey, decrypt } from "~/lib/crypto";
 import { randomName } from "~/lib/names";
 import { toErrorMessage } from "~/lib/errors";
@@ -272,6 +273,8 @@ export const redeployAgent = createServerFn({ method: "POST" })
     if (!agent.remoteId || !agent.machineId || !agent.projectId)
       throw new Error("Agent is missing required fields for redeploy");
 
+    destroyAgentSession(agent.name);
+
     const machine = await getMachine(agent.machineId, orgId);
     const runtime = getRuntimeForMachine(machine);
     if (!runtime.redeploy) throw new Error("This machine type does not support redeploy");
@@ -370,6 +373,7 @@ export const stopAgent = createServerFn({ method: "POST" })
 
     const machine = await getMachine(agent.machineId, orgId);
     const runtime = getRuntimeForMachine(machine);
+    destroyAgentSession(agent.name);
     // Stop and remove the container to free resources (there's no restart — only redeploy)
     await runtime.remove(agent.remoteId);
 
@@ -398,6 +402,8 @@ export const removeAgent = createServerFn({ method: "POST" })
       const { requireRole } = await import("~/server/auth");
       await requireRole(userId, orgId, "admin");
     }
+
+    destroyAgentSession(agent.name);
 
     if (agent.remoteId && agent.machineId) {
       const machine = await getMachine(agent.machineId, orgId);

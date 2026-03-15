@@ -66,14 +66,9 @@ function AgentDetail() {
     return () => clearInterval(interval);
   }, [name]);
 
-  // Track whether we've ever initialized the terminal (don't re-create on status changes)
-  const termInitialized = useRef(false);
-
-  // Initialize xterm + WebSocket (only once, after agent leaves provisioning)
+  // Initialize xterm + connect/reconnect WebSocket
   useEffect(() => {
     if (!termContainerRef.current || agent.status === "provisioning") return;
-    if (termInitialized.current) return;
-    termInitialized.current = true;
 
     const term = new Terminal({
       cursorBlink: true,
@@ -95,7 +90,7 @@ function AgentDetail() {
 
     termRef.current = term;
 
-    // Connect WebSocket
+    // Connect WebSocket — server keeps PTY alive across reconnects
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/terminal/${name}`);
     ws.binaryType = "arraybuffer";
@@ -113,7 +108,8 @@ function AgentDetail() {
     };
 
     ws.onclose = () => {
-      term.write("\r\n\x1b[90m[connection closed]\x1b[0m\r\n");
+      // Don't print anything — the session is still alive server-side.
+      // User will reconnect on next visit.
     };
 
     ws.onerror = () => {
@@ -140,14 +136,13 @@ function AgentDetail() {
 
     return () => {
       resizeObserver.disconnect();
-      ws.close();
+      ws.close(); // detaches from server session but PTY stays alive
       term.dispose();
       termRef.current = null;
       wsRef.current = null;
-      termInitialized.current = false;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally run only when name changes; status gate is handled by the ref guard
-  }, [name]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- status gate: only need to wait for non-provisioning
+  }, [name, agent.status === "provisioning"]);
 
   const handleStop = async () => {
     try {

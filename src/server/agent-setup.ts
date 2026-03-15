@@ -109,6 +109,16 @@ export async function setupAgent(transport: Transport, options: AgentSetupOption
     await transport.exec(["chown", "-R", "dev:dev", `${options.workDir}/.claude`]);
   }
 
+  // Write minimal tmux config for the dev user
+  const tmuxConf = [
+    "set -g aggressive-resize on",   // resize window to current client, not smallest
+    "set -g status off",             // hide status bar (dindang has its own UI chrome)
+    "set -g mouse on",               // allow mouse scrollback
+    "set -g history-limit 50000",    // generous scrollback
+  ].join("\n") + "\n";
+  await transport.writeFile("/home/dev/.tmux.conf", tmuxConf);
+  await transport.exec(["chown", "dev:dev", "/home/dev/.tmux.conf"]);
+
   // Run setup command as dev user
   if (options.setupCommand) {
     onProgress(`Running setup: ${options.setupCommand}`);

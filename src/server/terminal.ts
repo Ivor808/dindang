@@ -6,7 +6,7 @@ import { agents, machines } from "~/db/schema";
 import { getRuntimeForMachine } from "~/server/machine-registry";
 import { toErrorMessage } from "~/lib/errors";
 
-const TERMINAL_PATH_RE = /^\/ws\/terminal\/(.+)$/;
+const TERMINAL_PATH_RE = /^\/ws\/terminal\/([^/]+)\/([^/]+)$/;
 
 export function attachTerminalWebSocket(server: Server): void {
   const wss = new WebSocketServer({ noServer: true });
@@ -16,13 +16,14 @@ export function attachTerminalWebSocket(server: Server): void {
     if (!match) return; // let Vite HMR handle other upgrades
 
     const agentName = match[1]!;
+    const sessionName = match[2]!;
     wss.handleUpgrade(req, socket, head, (ws) => {
-      handleConnection(ws, agentName);
+      handleConnection(ws, agentName, sessionName);
     });
   });
 }
 
-async function handleConnection(ws: WebSocket, agentName: string): Promise<void> {
+async function handleConnection(ws: WebSocket, agentName: string, sessionName: string): Promise<void> {
   try {
     const agentRows = await db
       .select()
@@ -48,10 +49,10 @@ async function handleConnection(ws: WebSocket, agentName: string): Promise<void>
 
     const cwd = agent.workDir ?? "/home/dev";
     const cwdExists = await transport.fileExists(cwd);
-    // openPTY uses tmux internally — each connection attaches to the same
-    // tmux session ("main"). When this WS closes, tmux detaches and the
-    // process (e.g. Claude Code) keeps running inside the container.
-    const pty = await transport.openPTY({ cwd: cwdExists ? cwd : "/home/dev" });
+    const pty = await transport.openPTY({
+      cwd: cwdExists ? cwd : "/home/dev",
+      sessionName,
+    });
 
     // Transport → browser
     pty.stream.on("data", (chunk: Buffer) => {
@@ -85,12 +86,31 @@ async function handleConnection(ws: WebSocket, agentName: string): Promise<void>
           ? Buffer.from(data)
           : Buffer.concat(data);
 
-      // Check first byte for '{' — control messages (resize)
+      // Check first byte for '{' — control messages
       if (buf[0] === 0x7b) {
         try {
           const ctrl = JSON.parse(buf.toString());
           if (ctrl.type === "resize" && ctrl.cols && ctrl.rows) {
             pty.resize(ctrl.cols, ctrl.rows);
+            return;
+          }
+          if (ctrl.type === "kill-session" && typeof ctrl.sessionName === "string") {
+            transport.exec(["runuser", "-l", "dev", "-c", `tmux kill-session -t '${ctrl.sessionName}' 2>/dev/null`]).catch(() => {});
+            return;
+          }
+          if (ctrl.type === "sync-sessions" && Array.isArray(ctrl.sessions)) {
+            const expected = new Set(ctrl.sessions as string[]);
+            transport.exec(["runuser", "-l", "dev", "-c", "tmux list-sessions -F '#{session_name}' 2>/dev/null"])
+              .then((result) => {
+                if (result.exitCode !== 0) return;
+                const existing = result.stdout.trim().split("\n").filter(Boolean);
+                for (const s of existing) {
+                  if (!expected.has(s)) {
+                    transport.exec(["runuser", "-l", "dev", "-c", `tmux kill-session -t '${s}' 2>/dev/null`]).catch(() => {});
+                  }
+                }
+              })
+              .catch(() => {});
             return;
           }
         } catch {
@@ -101,7 +121,6 @@ async function handleConnection(ws: WebSocket, agentName: string): Promise<void>
       pty.stream.write(buf);
     });
 
-    // When WS closes, the docker exec ends and tmux detaches — process stays alive
     ws.on("close", cleanup);
     ws.on("error", cleanup);
   } catch (e) {

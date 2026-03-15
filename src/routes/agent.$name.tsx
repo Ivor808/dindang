@@ -1,176 +1,190 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  getAgent,
-  execAgent,
-  stopAgent,
-  removeAgent,
-  getAgentLogs,
-} from "~/server/agents";
+import { useState, useEffect, useRef } from "react";
+import { getAgent, stopAgent, removeAgent, redeployAgent, checkAgentHealth } from "~/server/agents";
+import type { AgentHealth } from "~/server/agents";
 import { StatusBadge } from "~/components/status-badge";
 import type { Agent } from "~/lib/types";
+import { toErrorMessage } from "~/lib/errors";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import "@xterm/xterm/css/xterm.css";
 
 export const Route = createFileRoute("/agent/$name")({
   loader: ({ params }) => getAgent({ data: params.name }),
   component: AgentDetail,
 });
 
+/** Replace 127.0.0.1/localhost in preview URLs with the current browser hostname */
+function resolvePreviewUrl(url: string): string {
+  if (url.startsWith("/")) return url; // relative proxy path, keep as-is
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost") {
+      parsed.hostname = window.location.hostname;
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 function AgentDetail() {
   const initialAgent = Route.useLoaderData();
   const { name } = Route.useParams();
   const navigate = useNavigate();
-  const [command, setCommand] = useState("");
   const [agent, setAgent] = useState<Agent>(initialAgent);
   const [error, setError] = useState<string | null>(null);
-  const [executing, setExecuting] = useState(false);
-  const [cmdHistory, setCmdHistory] = useState<string[]>([]);
-  const [historyIdx, setHistoryIdx] = useState(-1);
+  const [redeploying, setRedeploying] = useState(false);
+  const [health, setHealth] = useState<AgentHealth | null>(null);
+  const [showHealth, setShowHealth] = useState(false);
 
-  // Terminal buffer — accumulated lines that never get wiped
-  const [termLines, setTermLines] = useState<string[]>([]);
-  // Track how much Docker log content we've already consumed
-  const lastLogLenRef = useRef(0);
+  const termContainerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  // Fetch health when agent becomes ready
+  useEffect(() => {
+    if (agent.status !== "ready" && agent.status !== "busy") return;
+    checkAgentHealth({ data: name }).then(setHealth).catch(() => {});
+  }, [agent.status, name]);
 
-  const scrollToBottom = () => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(scrollToBottom, [termLines]);
-
-  const poll = useCallback(async () => {
-    try {
-      const [status, logText] = await Promise.all([
-        getAgent({ data: name }),
-        getAgentLogs({ data: name }),
-      ]);
-      setAgent(status);
-
-      // Only append new log content since last poll
-      if (logText.length > lastLogLenRef.current) {
-        const newContent = logText.slice(lastLogLenRef.current);
-        lastLogLenRef.current = logText.length;
-        const newLines = newContent.split("\n").filter((l) => l.length > 0);
-        if (newLines.length > 0) {
-          setTermLines((prev) => [...prev, ...newLines]);
-        }
+  // Poll agent status for header
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const updated = await getAgent({ data: name });
+        setAgent((prev) =>
+          prev.status === updated.status && prev.hostPort === updated.hostPort
+            ? prev
+            : updated
+        );
+      } catch {
+        // container may have been removed
       }
-    } catch {
-      // container may have been removed
-    }
+    }, 5000);
+    return () => clearInterval(interval);
   }, [name]);
 
-  const startPolling = useCallback(() => {
-    if (pollingRef.current) return;
-    poll();
-    pollingRef.current = setInterval(poll, 2000);
-  }, [poll]);
+  // Track whether we've ever initialized the terminal (don't re-create on status changes)
+  const termInitialized = useRef(false);
 
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  }, []);
-
+  // Initialize xterm + WebSocket (only once, after agent leaves provisioning)
   useEffect(() => {
-    // Fetch initial logs on mount
-    (async () => {
-      try {
-        const logText = await getAgentLogs({ data: name });
-        lastLogLenRef.current = logText.length;
-      } catch {
-        // ignore
+    if (!termContainerRef.current || agent.status === "provisioning") return;
+    if (termInitialized.current) return;
+    termInitialized.current = true;
+
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      theme: {
+        background: "#000000",
+        foreground: "#d4d4d8",
+        cursor: "#4ade80",
+        selectionBackground: "#3f3f46",
+      },
+      allowProposedApi: true,
+    });
+
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(termContainerRef.current);
+    fit.fit();
+
+    termRef.current = term;
+
+    // Connect WebSocket
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/terminal/${name}`);
+    ws.binaryType = "arraybuffer";
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+    };
+
+    ws.onmessage = (event) => {
+      const data = event.data instanceof ArrayBuffer
+        ? new Uint8Array(event.data)
+        : event.data;
+      term.write(data);
+    };
+
+    ws.onclose = () => {
+      term.write("\r\n\x1b[90m[connection closed]\x1b[0m\r\n");
+    };
+
+    ws.onerror = () => {
+      term.write("\r\n\x1b[31m[connection error]\x1b[0m\r\n");
+    };
+
+    // Terminal input → WebSocket
+    term.onData((data) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
       }
-    })();
-    return stopPolling;
-  }, [name, stopPolling]);
+    });
 
-  // Focus input on mount
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const handleSubmit = async () => {
-    if (!command.trim() || executing) return;
-    const cmd = command.trim();
-    setCmdHistory((prev) => [...prev, cmd]);
-    setHistoryIdx(-1);
-    setCommand("");
-    // Echo the command into the terminal buffer
-    setTermLines((prev) => [...prev, `$ ${cmd}`]);
-    setError(null);
-    setExecuting(true);
-    try {
-      await execAgent({ data: { name, command: cmd } });
-      // Start polling to pick up output
-      startPolling();
-      // Keep polling for a while, then stop and re-enable input
-      setTimeout(() => {
-        poll().then(() => {
-          setExecuting(false);
-          inputRef.current?.focus();
-        });
-      }, 1500);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setExecuting(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleSubmit();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (cmdHistory.length === 0) return;
-      const next =
-        historyIdx === -1
-          ? cmdHistory.length - 1
-          : Math.max(0, historyIdx - 1);
-      setHistoryIdx(next);
-      setCommand(cmdHistory[next]!);
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (historyIdx === -1) return;
-      const next = historyIdx + 1;
-      if (next >= cmdHistory.length) {
-        setHistoryIdx(-1);
-        setCommand("");
-      } else {
-        setHistoryIdx(next);
-        setCommand(cmdHistory[next]!);
+    term.onResize(({ cols, rows }) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "resize", cols, rows }));
       }
-    }
-  };
+    });
+
+    const resizeObserver = new ResizeObserver(() => fit.fit());
+    resizeObserver.observe(termContainerRef.current);
+
+    term.focus();
+
+    return () => {
+      resizeObserver.disconnect();
+      ws.close();
+      term.dispose();
+      termRef.current = null;
+      wsRef.current = null;
+      termInitialized.current = false;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally run only when name changes; status gate is handled by the ref guard
+  }, [name]);
 
   const handleStop = async () => {
     try {
-      const updated = await stopAgent({ data: name });
-      setAgent(updated);
-      stopPolling();
-      setExecuting(false);
+      wsRef.current?.close();
+      await stopAgent({ data: name });
+      navigate({ to: "/" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(toErrorMessage(e));
+    }
+  };
+
+  const handleRedeploy = async () => {
+    setRedeploying(true);
+    setError(null);
+    try {
+      wsRef.current?.close();
+      const updated = await redeployAgent({ data: name });
+      setAgent(updated);
+    } catch (e) {
+      setError(toErrorMessage(e));
+    } finally {
+      setRedeploying(false);
     }
   };
 
   const handleRemove = async () => {
     try {
-      stopPolling();
+      wsRef.current?.close();
       await removeAgent({ data: name });
       navigate({ to: "/" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(toErrorMessage(e));
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 flex flex-col h-screen">
+    <div className="max-w-5xl mx-auto p-6 flex flex-col h-screen">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
@@ -183,7 +197,17 @@ function AgentDetail() {
           <h1 className="text-xl font-bold">{agent.name}</h1>
           <StatusBadge status={agent.status} />
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {agent.previewUrl && (
+            <a
+              href={resolvePreviewUrl(agent.previewUrl)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs transition-colors"
+            >
+              preview
+            </a>
+          )}
           {agent.status === "busy" && (
             <button
               onClick={handleStop}
@@ -192,6 +216,13 @@ function AgentDetail() {
               stop
             </button>
           )}
+          <button
+            onClick={handleRedeploy}
+            disabled={redeploying}
+            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
+          >
+            {redeploying ? "redeploying..." : "redeploy"}
+          </button>
           <button
             onClick={handleRemove}
             className="px-3 py-1.5 bg-red-950 hover:bg-red-900 text-red-300 rounded text-xs transition-colors cursor-pointer"
@@ -205,11 +236,17 @@ function AgentDetail() {
         <p className="text-red-400 text-sm mb-2">Error: {error}</p>
       )}
 
+      {agent.status === "error" && agent.errorMessage && (
+        <div className="bg-red-950/50 border border-red-900 rounded px-4 py-3 mb-3">
+          <p className="text-red-400 text-xs font-bold mb-1">Setup failed</p>
+          <pre className="text-red-300 text-xs whitespace-pre-wrap break-words">{agent.errorMessage}</pre>
+        </div>
+      )}
+
+      {health && health.running && <HealthBadge health={health} showHealth={showHealth} onToggle={() => setShowHealth(!showHealth)} />}
+
       {/* Terminal */}
-      <div
-        className="flex-1 bg-black rounded-lg border border-zinc-800 flex flex-col min-h-0 overflow-hidden cursor-text"
-        onClick={() => inputRef.current?.focus()}
-      >
+      <div className="flex-1 bg-black rounded-lg border border-zinc-800 flex flex-col min-h-0 overflow-hidden relative">
         {/* Terminal header */}
         <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800 bg-zinc-900/50 shrink-0">
           <div className="flex gap-1.5">
@@ -218,44 +255,63 @@ function AgentDetail() {
             <div className="w-3 h-3 rounded-full bg-green-500/80" />
           </div>
           <span className="text-xs text-zinc-500 ml-2">{agent.name}</span>
-          {executing && (
-            <span className="text-xs text-blue-400 animate-pulse ml-auto">
-              executing...
-            </span>
-          )}
         </div>
 
-        {/* Terminal body */}
-        <div className="flex-1 overflow-y-auto p-4 text-sm text-zinc-300 font-mono">
-          {termLines.map((line, i) => (
-            <div
-              key={i}
-              className={`whitespace-pre-wrap break-all leading-relaxed ${
-                line.startsWith("$ ") ? "text-green-400" : ""
-              }`}
-            >
-              {line}
+        {/* xterm container */}
+        <div
+          ref={termContainerRef}
+          className="flex-1 min-h-0 p-1"
+          onClick={() => termRef.current?.focus()}
+        />
+
+        {redeploying && (
+          <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
+            <div className="flex items-center gap-3 text-zinc-400 text-sm">
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Redeploying container...
             </div>
-          ))}
-
-          {/* Prompt line */}
-          <div className="flex items-center mt-1">
-            <span className="text-green-400 shrink-0">$&nbsp;</span>
-            <input
-              ref={inputRef}
-              type="text"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              onKeyDown={handleKeyDown}
-              readOnly={executing}
-              className={`flex-1 bg-transparent border-none outline-none font-mono text-sm caret-green-400 ${executing ? "text-zinc-600" : "text-zinc-100"}`}
-              spellCheck={false}
-              autoComplete="off"
-            />
           </div>
-          <div ref={bottomRef} />
-        </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function HealthBadge({ health, showHealth, onToggle }: { health: AgentHealth; showHealth: boolean; onToggle: () => void }) {
+  const checks = [
+    { label: "user", ok: health.user === "dev", detail: health.user ?? "none" },
+    { label: "git", ok: health.git },
+    { label: "curl", ok: health.curl },
+    { label: "node", ok: health.node },
+    ...(health.aiCli ? [{ label: health.aiCli.name, ok: health.aiCli.installed }] : []),
+    { label: "workdir", ok: health.workDirExists },
+  ];
+  const allOk = checks.every((c) => c.ok);
+
+  return (
+    <div className="mb-3">
+      <button
+        onClick={onToggle}
+        className={`text-xs px-2 py-1 rounded cursor-pointer transition-colors ${
+          allOk
+            ? "bg-green-900/50 text-green-400 hover:bg-green-900/70"
+            : "bg-red-900/50 text-red-400 hover:bg-red-900/70"
+        }`}
+      >
+        {allOk ? "\u2713 healthy" : "\u2717 unhealthy"}
+      </button>
+      {showHealth && (
+        <div className="flex items-center gap-3 mt-2 text-xs">
+          {checks.map(({ label, ok, detail }) => (
+            <span key={label} className={ok ? "text-green-500" : "text-red-400"}>
+              {ok ? "\u2713" : "\u2717"} {label}{detail ? ` (${detail})` : ""}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -106,6 +106,7 @@ function ProjectsTab({
   const [projectName, setProjectName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [setupCmd, setSetupCmd] = useState("");
+  const [aiCli, setAiCli] = useState<"claude" | "codex" | "none">("claude");
   const [devPort, setDevPort] = useState("");
   const [isDefault, setIsDefault] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +115,7 @@ function ProjectsTab({
     setProjectName("");
     setRepoUrl("");
     setSetupCmd("");
+    setAiCli("claude");
     setDevPort("");
     setIsDefault(false);
     setEditingId(null);
@@ -124,13 +126,14 @@ function ProjectsTab({
     setProjectName(p.name);
     setRepoUrl(p.repoUrl ?? "");
     setSetupCmd(p.setupCommand ?? "");
+    setAiCli(p.aiCli ?? "claude");
     setDevPort(p.devPort ? String(p.devPort) : "");
     setIsDefault(p.isDefault);
     setShowForm(true);
   };
 
   const handleSubmit = async () => {
-    if (!projectName.trim() || !repoUrl.trim()) return;
+    if (!projectName.trim()) return;
     setError(null);
     try {
       if (editingId) {
@@ -138,8 +141,9 @@ function ProjectsTab({
           data: {
             id: editingId,
             name: projectName.trim(),
-            repoUrl: repoUrl.trim(),
+            repoUrl: repoUrl.trim() || undefined,
             setupCommand: setupCmd.trim() || undefined,
+            aiCli,
             devPort: devPort ? parseInt(devPort, 10) : undefined,
             isDefault,
           },
@@ -148,8 +152,9 @@ function ProjectsTab({
         await createProject({
           data: {
             name: projectName.trim(),
-            repoUrl: repoUrl.trim(),
+            repoUrl: repoUrl.trim() || undefined,
             setupCommand: setupCmd.trim() || undefined,
+            aiCli,
             devPort: devPort ? parseInt(devPort, 10) : undefined,
             isDefault,
           },
@@ -234,6 +239,18 @@ function ProjectsTab({
             />
           </div>
           <div>
+            <label className="block text-xs text-zinc-500 mb-1">AI CLI</label>
+            <select
+              value={aiCli}
+              onChange={(e) => setAiCli(e.target.value as "claude" | "codex" | "none")}
+              className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-500 cursor-pointer"
+            >
+              <option value="claude">Claude Code</option>
+              <option value="codex">Codex CLI</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+          <div>
             <label className="block text-xs text-zinc-500 mb-1">
               Dev Server Port (optional)
             </label>
@@ -259,7 +276,7 @@ function ProjectsTab({
           </div>
           <button
             onClick={handleSubmit}
-            disabled={!projectName.trim() || !repoUrl.trim()}
+            disabled={!projectName.trim()}
             className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
           >
             {editingId ? "save changes" : "add project"}
@@ -337,8 +354,9 @@ function MachinesTab({
   router: ReturnType<typeof useRouter>;
 }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [type, setType] = useState<"server" | "terminal">("server");
+  const [type, setType] = useState<"server" | "terminal" | "local">("local");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("");
@@ -348,33 +366,64 @@ function MachinesTab({
 
   const resetForm = () => {
     setName("");
-    setType("server");
+    setType("local");
     setHost("");
     setPort("22");
     setUsername("");
     setAuthMethod("key");
     setCredential("");
+    setEditingId(null);
   };
 
-  const handleAdd = async () => {
+  const startEdit = (m: Machine) => {
+    setEditingId(m.id);
+    setName(m.name);
+    setType(m.type as "server" | "terminal" | "local");
+    setHost(m.host ?? "");
+    setPort(String(m.port ?? 22));
+    setUsername(m.username ?? "");
+    setAuthMethod((m.authMethod as "key" | "password") ?? "key");
+    setCredential("");
+    setShowForm(true);
+  };
+
+  const handleSubmit = async () => {
     if (!name.trim()) return;
     setError(null);
     try {
-      await createMachineApi({
-        data: {
-          name: name.trim(),
-          type,
-          ...(type === "server" || type === "terminal"
-            ? {
-                host: host.trim(),
-                port: parseInt(port, 10) || 22,
-                username: username.trim(),
-                authMethod,
-                credential: credential.trim() || undefined,
-              }
-            : {}),
-        },
-      });
+      if (editingId) {
+        await editMachineApi({
+          data: {
+            id: editingId,
+            name: name.trim(),
+            ...(type === "server" || type === "terminal"
+              ? {
+                  host: host.trim(),
+                  port: parseInt(port, 10) || 22,
+                  username: username.trim(),
+                  authMethod,
+                  ...(credential.trim() ? { credential: credential.trim() } : {}),
+                }
+              : {}),
+          },
+        });
+      } else {
+        await createMachineApi({
+          data: {
+            name: name.trim(),
+            type,
+            ...(type === "server" || type === "terminal"
+              ? {
+                  host: host.trim(),
+                  port: parseInt(port, 10) || 22,
+                  username: username.trim(),
+                  authMethod,
+                  credential: credential.trim() || undefined,
+                }
+              : {}),
+          },
+        });
+      }
       resetForm();
       setShowForm(false);
       await router.invalidate();
@@ -408,7 +457,7 @@ function MachinesTab({
           Machines
         </h2>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}
           className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs transition-colors cursor-pointer"
         >
           {showForm ? "cancel" : "+ add machine"}
@@ -431,17 +480,20 @@ function MachinesTab({
               className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-500"
             />
           </div>
-          <div>
-            <label className="block text-xs text-zinc-500 mb-1">Type</label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as "server" | "terminal")}
-              className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-500 cursor-pointer"
-            >
-              <option value="server">Server (managed Docker)</option>
-              <option value="terminal">Terminal (direct SSH)</option>
-            </select>
-          </div>
+          {!editingId && (
+            <div>
+              <label className="block text-xs text-zinc-500 mb-1">Type</label>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value as "server" | "terminal" | "local")}
+                className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-500 cursor-pointer"
+              >
+                <option value="local">Local Docker</option>
+                <option value="server">Server (managed Docker)</option>
+                <option value="terminal">Terminal (direct SSH)</option>
+              </select>
+            </div>
+          )}
           {(type === "server" || type === "terminal") && (
             <>
               <div>
@@ -488,6 +540,9 @@ function MachinesTab({
               <div>
                 <label className="block text-xs text-zinc-500 mb-1">
                   {authMethod === "key" ? "Private Key" : "Password"}
+                  {editingId && (
+                    <span className="text-zinc-600 ml-1">(leave blank to keep current)</span>
+                  )}
                 </label>
                 {authMethod === "key" ? (
                   <textarea
@@ -509,11 +564,11 @@ function MachinesTab({
             </>
           )}
           <button
-            onClick={handleAdd}
+            onClick={handleSubmit}
             disabled={!name.trim()}
             className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
           >
-            add machine
+            {editingId ? "save changes" : "add machine"}
           </button>
         </div>
       )}
@@ -526,9 +581,7 @@ function MachinesTab({
             <MachineCard
               key={machine.id}
               machine={machine}
-              onEdit={() => {
-                /* TODO: edit modal */
-              }}
+              onEdit={() => startEdit(machine)}
               onDelete={() => handleDelete(machine.id)}
               onToggle={() => handleToggle(machine)}
             />

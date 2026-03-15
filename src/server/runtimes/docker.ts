@@ -20,32 +20,53 @@ export class DockerAgentRuntime implements AgentRuntime {
       );
     });
 
-    const portBindings: Record<string, Array<{ HostPort: string }>> = {};
-    const exposedPorts: Record<string, Record<string, never>> = {};
-    if (options.devPort) {
-      const key = `${options.devPort}/tcp`;
-      exposedPorts[key] = {};
-      portBindings[key] = [{ HostPort: "0" }];
-    }
-
     const envArr = Object.entries(options.env).map(([k, v]) => `${k}=${v}`);
+    const volumeName = `dindang-${options.name}`;
 
     const container = await this.docker.createContainer({
       Image: IMAGE,
       name: options.name,
       Labels: { [LABEL]: "true", "dindang.agent": options.name },
-      ExposedPorts: exposedPorts,
       Tty: true,
       OpenStdin: true,
       Env: envArr,
       Cmd: ["bash", "-c", "trap 'exit 0' TERM; while true; do sleep 1; done"],
-      HostConfig: { PortBindings: portBindings },
+      HostConfig: {
+        Binds: [`${volumeName}:/home`],
+      },
     });
     await container.start();
 
     const info = await container.inspect();
-    const hostPort = this.getHostPort(info);
-    return { remoteId: info.Id, hostPort };
+    return { remoteId: info.Id };
+  }
+
+  async redeploy(remoteId: string, options: AgentRuntimeOptions): Promise<{ remoteId: string; hostPort?: number }> {
+    const oldInfo = await this.docker.getContainer(remoteId).inspect();
+    const oldName = oldInfo.Name.replace(/^\//, "");
+    const volumeName = `dindang-${oldName}`;
+
+    try { await this.docker.getContainer(remoteId).stop(); } catch { /* may already be stopped */ }
+    await this.docker.getContainer(remoteId).remove();
+
+    const envArr = Object.entries(options.env).map(([k, v]) => `${k}=${v}`);
+
+    const container = await this.docker.createContainer({
+      Image: IMAGE,
+      name: oldName,
+      Labels: { [LABEL]: "true", "dindang.agent": oldName },
+      Tty: true,
+      OpenStdin: true,
+      Env: envArr,
+      Cmd: ["bash", "-c", "trap 'exit 0' TERM; while true; do sleep 1; done"],
+      HostConfig: {
+        Binds: [`${volumeName}:/home`],
+      },
+    });
+    await container.start();
+
+    const info = await container.inspect();
+    return { remoteId: info.Id };
   }
 
   async stop(remoteId: string): Promise<void> {
@@ -54,12 +75,28 @@ export class DockerAgentRuntime implements AgentRuntime {
 
   async remove(remoteId: string): Promise<void> {
     const container = this.docker.getContainer(remoteId);
+    let volumeName: string | undefined;
+    try {
+      const info = await container.inspect();
+      const name = info.Name.replace(/^\//, "");
+      volumeName = `dindang-${name}`;
+    } catch { /* container may not exist */ }
     try { await container.stop(); } catch { /* may already be stopped */ }
     await container.remove();
+    if (volumeName) {
+      try { await this.docker.getVolume(volumeName).remove(); } catch { /* volume may not exist */ }
+    }
   }
 
   async getTransport(remoteId: string): Promise<Transport> {
     return new DockerTransport(this.docker.getContainer(remoteId));
+  }
+
+  async getContainerIp(remoteId: string): Promise<string | undefined> {
+    try {
+      const info = await this.docker.getContainer(remoteId).inspect();
+      return info.NetworkSettings?.IPAddress || undefined;
+    } catch { return undefined; }
   }
 
   async isRunning(remoteId: string): Promise<boolean> {
@@ -69,14 +106,17 @@ export class DockerAgentRuntime implements AgentRuntime {
     } catch { return false; }
   }
 
-  private getHostPort(info: Docker.ContainerInspectInfo): number | undefined {
-    const ports = info.NetworkSettings?.Ports;
-    if (!ports) return undefined;
-    for (const bindings of Object.values(ports)) {
-      if (bindings && bindings.length > 0 && bindings[0]?.HostPort) {
-        return parseInt(bindings[0].HostPort, 10);
-      }
-    }
-    return undefined;
+  /** List all containers managed by dindang (any state). */
+  async listManaged(): Promise<{ id: string; name: string; running: boolean }[]> {
+    const containers = await this.docker.listContainers({
+      all: true,
+      filters: { label: [LABEL] },
+    });
+    return containers.map((c) => ({
+      id: c.Id,
+      name: (c.Names[0] ?? "").replace(/^\//, ""),
+      running: c.State === "running",
+    }));
   }
+
 }

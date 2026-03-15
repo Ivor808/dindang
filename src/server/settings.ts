@@ -20,11 +20,10 @@ export const listProjects = createServerFn({ method: "GET" }).handler(async () =
 
 export const createProject = createServerFn({ method: "POST" })
   .inputValidator(
-    (data: { name: string; repoUrl: string; setupCommand?: string; devPort?: number; isDefault: boolean }) => {
+    (data: { name: string; repoUrl?: string; setupCommand?: string; aiCli?: "claude" | "codex" | "none"; devPort?: number; isDefault: boolean }) => {
       if (!data.name || typeof data.name !== "string") throw new Error("Name is required");
-      if (!data.repoUrl || typeof data.repoUrl !== "string") throw new Error("Repo URL is required");
       if (data.name.length > 100) throw new Error("Name too long");
-      if (data.repoUrl.length > 500) throw new Error("Repo URL too long");
+      if (data.repoUrl && data.repoUrl.length > 500) throw new Error("Repo URL too long");
       if (data.setupCommand && data.setupCommand.length > 1000) throw new Error("Setup command too long");
       if (data.devPort && (data.devPort < 1 || data.devPort > 65535)) throw new Error("Invalid port number");
       return data;
@@ -39,8 +38,9 @@ export const createProject = createServerFn({ method: "POST" })
       .values({
         orgId,
         name: data.name,
-        repoUrl: data.repoUrl,
+        repoUrl: data.repoUrl || null,
         setupCommand: data.setupCommand,
+        aiCli: data.aiCli ?? "claude",
         devPort: data.devPort,
         isDefault: data.isDefault,
       })
@@ -51,7 +51,7 @@ export const createProject = createServerFn({ method: "POST" })
 
 export const editProject = createServerFn({ method: "POST" })
   .inputValidator(
-    (data: { id: string; name?: string; repoUrl?: string; setupCommand?: string; devPort?: number; isDefault?: boolean }) => data,
+    (data: { id: string; name?: string; repoUrl?: string; setupCommand?: string; aiCli?: "claude" | "codex" | "none"; devPort?: number; isDefault?: boolean }) => data,
   )
   .handler(async ({ data }) => {
     const { userId, orgId } = await requireAuthWithOrg();

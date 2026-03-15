@@ -32,12 +32,8 @@ export class ServerTransport implements Transport {
     });
 
     // Write docker exec command into the SSH shell
-    pty.stream.write(`docker exec -it ${this.containerId} bash\n`);
-
-    if (options?.cwd) {
-      await new Promise((r) => setTimeout(r, 500));
-      pty.stream.write(`cd ${options.cwd} && clear\n`);
-    }
+    const cwd = options?.cwd ?? "/home/dev";
+    pty.stream.write(`docker exec -it -u dev -w ${cwd} -e HOME=/home/dev -e PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin ${this.containerId} bash -l\n`);
 
     return pty;
   }

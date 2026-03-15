@@ -51,7 +51,10 @@ function Dashboard() {
   // Auto-refresh while any agent is provisioning
   useEffect(() => {
     if (!hasProvisioning) return;
-    const interval = setInterval(() => router.invalidate(), 3000);
+    const interval = setInterval(async () => {
+      if (document.visibilityState === "hidden") return;
+      await router.invalidate();
+    }, 3000);
     return () => clearInterval(interval);
   }, [hasProvisioning, router]);
 

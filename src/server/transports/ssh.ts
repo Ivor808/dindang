@@ -18,6 +18,15 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
+export const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export function validateEnvKey(key: string): string {
+  if (!ENV_KEY_RE.test(key)) {
+    throw new Error(`Invalid environment variable name: ${key}`);
+  }
+  return key;
+}
+
 export class SSHTransport implements Transport {
   private client: Client;
   private connected = false;
@@ -66,7 +75,7 @@ export class SSHTransport implements Transport {
 
     const envPrefix = options?.env
       ? Object.entries(options.env)
-          .map(([k, v]) => `${k}=${shellEscape(v)}`)
+          .map(([k, v]) => `${validateEnvKey(k)}=${shellEscape(v)}`)
           .join(" ") + " "
       : "";
 
@@ -104,7 +113,7 @@ export class SSHTransport implements Transport {
           // Set env vars and cd to working directory
           if (options?.env) {
             for (const [k, v] of Object.entries(options.env)) {
-              stream.write(`export ${k}=${shellEscape(v)}\n`);
+              stream.write(`export ${validateEnvKey(k)}=${shellEscape(v)}\n`);
             }
           }
           if (options?.cwd) {

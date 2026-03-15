@@ -81,6 +81,8 @@ export class ServerAgentRuntime implements AgentRuntime {
       const runCmd = this.docker([
         "run", "-d",
         "--name", name,
+        "--label", "dindang.managed=true",
+        "--label", `dindang.agent=${options.name}`,
         "-v", `${volume}:/home`,
       ]);
 
@@ -134,6 +136,8 @@ export class ServerAgentRuntime implements AgentRuntime {
       const runCmd = this.docker([
         "run", "-d",
         "--name", name,
+        "--label", "dindang.managed=true",
+        "--label", `dindang.agent=${options.name}`,
         "-v", `${volume}:/home`,
       ]);
 

@@ -31,17 +31,21 @@ export class DockerTransport implements Transport {
   }
 
   async openPTY(options?: PTYOptions): Promise<PTYSession> {
+    const cwd = options?.cwd ?? "/home/dev";
     const exec = await this.container.exec({
       Cmd: ["bash", "-l"],
+      User: "dev",
       AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true,
       Tty: true,
       Env: [
         "TERM=xterm-256color",
+        "HOME=/home/dev",
+        `PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin`,
         ...(options?.env ? Object.entries(options.env).map(([k, v]) => `${k}=${v}`) : []),
       ],
-      ...(options?.cwd && { WorkingDir: options.cwd }),
+      WorkingDir: cwd,
     });
 
     const stream = await exec.start({ hijack: true, stdin: true, Tty: true });
@@ -59,8 +63,9 @@ export class DockerTransport implements Transport {
 
   async writeFile(path: string, content: string, mode?: number): Promise<void> {
     const b64 = Buffer.from(content).toString("base64");
-    const modeCmd = mode ? ` && chmod ${mode.toString(8)} ${path}` : "";
-    await this.exec(["bash", "-c", `echo '${b64}' | base64 -d > ${path}${modeCmd}`]);
+    const escapedPath = path.replace(/'/g, "'\\''");
+    const modeCmd = mode ? ` && chmod ${mode.toString(8)} '${escapedPath}'` : "";
+    await this.exec(["bash", "-c", `echo '${b64}' | base64 -d > '${escapedPath}'${modeCmd}`]);
   }
 
   async readFile(path: string): Promise<string> {

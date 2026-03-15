@@ -3,7 +3,7 @@ import type {
   AgentRuntimeOptions,
   Transport,
 } from "~/lib/transport";
-import { SSHTransport, type SSHConnectionOptions } from "~/server/transports/ssh";
+import { SSHTransport, type SSHConnectionOptions, validateEnvKey } from "~/server/transports/ssh";
 
 export class SSHAgentRuntime implements AgentRuntime {
   constructor(private connectionOptions: SSHConnectionOptions) {}
@@ -15,7 +15,10 @@ export class SSHAgentRuntime implements AgentRuntime {
     try {
       // Write environment variables to ~/.dindang-env
       const envContent = Object.entries(options.env)
-        .map(([k, v]) => `export ${k}='${v.replace(/'/g, "'\\''")}'`)
+        .map(([k, v]) => {
+          validateEnvKey(k);
+          return `export ${k}='${v.replace(/'/g, "'\\''")}'`;
+        })
         .join("\n");
       await transport.writeFile("/root/.dindang-env", envContent, 0o600);
 

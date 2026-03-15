@@ -13,8 +13,10 @@ export interface Agent {
   remoteId: string;
   workDir: string;
   status: AgentStatus;
+  errorMessage?: string;
   createdAt: string;
   hostPort?: number;
+  previewUrl?: string;
 }
 
 export interface Machine {
@@ -32,12 +34,15 @@ export interface Machine {
   createdAt: string;
 }
 
+export type AiCli = "claude" | "codex" | "none";
+
 export interface Project {
   id: string;
   orgId: string;
   name: string;
   repoUrl: string;
   setupCommand?: string;
+  aiCli: AiCli;
   devPort?: number;
   isDefault: boolean;
 }

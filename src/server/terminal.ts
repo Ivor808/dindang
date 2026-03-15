@@ -60,8 +60,10 @@ async function handleConnection(ws: WebSocket, agentName: string): Promise<void>
     const runtime = getRuntimeForMachine(machine);
     const transport = await runtime.getTransport(agent.remoteId);
 
-    // Open PTY
-    const pty = await transport.openPTY({ cwd: agent.workDir ?? "/root" });
+    // Open PTY — fall back to /home/dev if workDir doesn't exist (e.g. fresh volume)
+    const cwd = agent.workDir ?? "/home/dev";
+    const cwdExists = await transport.fileExists(cwd);
+    const pty = await transport.openPTY({ cwd: cwdExists ? cwd : "/home/dev" });
 
     activeSessions.set(ws, { pty });
 
@@ -93,12 +95,16 @@ async function handleConnection(ws: WebSocket, agentName: string): Promise<void>
 
     // Browser → transport
     ws.on("message", (data) => {
-      const msg = data.toString();
+      // Fast path: check first byte for '{' before converting to string
+      const firstByte = Buffer.isBuffer(data)
+        ? data[0]
+        : typeof data === "string"
+          ? data.charCodeAt(0)
+          : undefined;
 
-      // Check for control messages (JSON with type field)
-      if (msg.startsWith("{")) {
+      if (firstByte === 0x7b) {
         try {
-          const ctrl = JSON.parse(msg);
+          const ctrl = JSON.parse(data.toString());
           if (ctrl.type === "resize" && ctrl.cols && ctrl.rows) {
             pty.resize(ctrl.cols, ctrl.rows);
             return;
@@ -110,13 +116,10 @@ async function handleConnection(ws: WebSocket, agentName: string): Promise<void>
 
       if (Buffer.isBuffer(data)) {
         pty.stream.write(data);
-      } else if (typeof data === "string") {
-        pty.stream.write(data);
       } else if (data instanceof ArrayBuffer) {
         pty.stream.write(Buffer.from(data));
       } else {
-        // data is Buffer[]
-        pty.stream.write(Buffer.concat(data as Buffer[]));
+        pty.stream.write(data);
       }
     });
 

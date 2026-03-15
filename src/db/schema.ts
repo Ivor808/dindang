@@ -56,6 +56,7 @@ export const projects = pgTable("projects", {
   name: text("name").notNull(),
   repoUrl: text("repo_url"),
   setupCommand: text("setup_command"),
+  aiCli: text("ai_cli", { enum: ["claude", "codex", "none"] }).default("claude").notNull(),
   devPort: integer("dev_port"),
   isDefault: boolean("is_default").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -75,6 +76,7 @@ export const agents = pgTable("agents", {
   status: text("status", { enum: ["provisioning", "ready", "busy", "error"] })
     .default("provisioning")
     .notNull(),
+  errorMessage: text("error_message"),
   hostPort: integer("host_port"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

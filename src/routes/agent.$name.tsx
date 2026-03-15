@@ -1,13 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { getAgent, stopAgent, removeAgent, redeployAgent, checkAgentHealth } from "~/server/agents";
 import type { AgentHealth } from "~/server/agents";
 import { StatusBadge } from "~/components/status-badge";
+import { TerminalTabs } from "~/components/terminal-tabs";
 import type { Agent } from "~/lib/types";
 import { toErrorMessage } from "~/lib/errors";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import "@xterm/xterm/css/xterm.css";
 
 export const Route = createFileRoute("/agent/$name")({
   loader: ({ params }) => getAgent({ data: params.name }),
@@ -38,10 +36,6 @@ function AgentDetail() {
   const [health, setHealth] = useState<AgentHealth | null>(null);
   const [showHealth, setShowHealth] = useState(false);
 
-  const termContainerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-
   // Fetch health when agent becomes ready
   useEffect(() => {
     if (agent.status !== "ready" && agent.status !== "busy") return;
@@ -66,87 +60,8 @@ function AgentDetail() {
     return () => clearInterval(interval);
   }, [name]);
 
-  // Initialize xterm + connect/reconnect WebSocket
-  useEffect(() => {
-    if (!termContainerRef.current || agent.status === "provisioning") return;
-
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 13,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      theme: {
-        background: "#000000",
-        foreground: "#d4d4d8",
-        cursor: "#4ade80",
-        selectionBackground: "#3f3f46",
-      },
-      allowProposedApi: true,
-    });
-
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.open(termContainerRef.current);
-    fit.fit();
-
-    termRef.current = term;
-
-    // Connect WebSocket — server keeps PTY alive across reconnects
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/terminal/${name}`);
-    ws.binaryType = "arraybuffer";
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
-    };
-
-    ws.onmessage = (event) => {
-      const data = event.data instanceof ArrayBuffer
-        ? new Uint8Array(event.data)
-        : event.data;
-      term.write(data);
-    };
-
-    ws.onclose = () => {
-      // Don't print anything — the session is still alive server-side.
-      // User will reconnect on next visit.
-    };
-
-    ws.onerror = () => {
-      term.write("\r\n\x1b[31m[connection error]\x1b[0m\r\n");
-    };
-
-    // Terminal input → WebSocket
-    term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
-      }
-    });
-
-    term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "resize", cols, rows }));
-      }
-    });
-
-    const resizeObserver = new ResizeObserver(() => fit.fit());
-    resizeObserver.observe(termContainerRef.current);
-
-    term.focus();
-
-    return () => {
-      resizeObserver.disconnect();
-      ws.close(); // detaches from server session but PTY stays alive
-      term.dispose();
-      termRef.current = null;
-      wsRef.current = null;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- status gate: only need to wait for non-provisioning
-  }, [name, agent.status === "provisioning"]);
-
   const handleStop = async () => {
     try {
-      wsRef.current?.close();
       await stopAgent({ data: name });
       navigate({ to: "/" });
     } catch (e) {
@@ -158,7 +73,6 @@ function AgentDetail() {
     setRedeploying(true);
     setError(null);
     try {
-      wsRef.current?.close();
       const updated = await redeployAgent({ data: name });
       setAgent(updated);
     } catch (e) {
@@ -170,7 +84,6 @@ function AgentDetail() {
 
   const handleRemove = async () => {
     try {
-      wsRef.current?.close();
       await removeAgent({ data: name });
       navigate({ to: "/" });
     } catch (e) {
@@ -240,37 +153,20 @@ function AgentDetail() {
 
       {health && health.running && <HealthBadge health={health} showHealth={showHealth} onToggle={() => setShowHealth(!showHealth)} />}
 
-      {/* Terminal */}
-      <div className="flex-1 bg-black rounded-lg border border-zinc-800 flex flex-col min-h-0 overflow-hidden relative">
-        {/* Terminal header */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800 bg-zinc-900/50 shrink-0">
-          <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-red-500/80" />
-            <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-            <div className="w-3 h-3 rounded-full bg-green-500/80" />
+      {/* Terminal tabs */}
+      <TerminalTabs agentName={name} disabled={agent.status === "provisioning"} />
+
+      {redeploying && (
+        <div className="absolute inset-0 bg-black/80 flex items-center justify-center rounded-lg">
+          <div className="flex items-center gap-3 text-zinc-400 text-sm">
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Redeploying container...
           </div>
-          <span className="text-xs text-zinc-500 ml-2">{agent.name}</span>
         </div>
-
-        {/* xterm container */}
-        <div
-          ref={termContainerRef}
-          className="flex-1 min-h-0 p-1"
-          onClick={() => termRef.current?.focus()}
-        />
-
-        {redeploying && (
-          <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
-            <div className="flex items-center gap-3 text-zinc-400 text-sm">
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Redeploying container...
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Load .env if present
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
+usage() {
+  cat <<'EOF'
+Usage: dx <command>
+
+Commands:
+  run         Start the dev server on port 3000
+  build       Build for production
+  test        Run tests
+  test:watch  Run tests in watch mode
+  migrate     Generate and run Drizzle migrations
+  generate    Generate Drizzle migration files only
+  push        Push schema directly to DB (no migration files)
+  wipedb      Drop all tables and re-push schema
+  studio      Open Drizzle Studio
+  typecheck   Run TypeScript type checking
+EOF
+}
+
+cmd_run() {
+  exec npm run dev
+}
+
+cmd_build() {
+  exec npm run build
+}
+
+cmd_test() {
+  exec npm run test -- "$@"
+}
+
+cmd_test_watch() {
+  exec npm run test:watch -- "$@"
+}
+
+cmd_migrate() {
+  npx drizzle-kit generate
+  npx drizzle-kit migrate
+}
+
+cmd_generate() {
+  exec npx drizzle-kit generate
+}
+
+cmd_push() {
+  exec npx drizzle-kit push
+}
+
+cmd_wipedb() {
+  if [ -z "${DATABASE_URL:-}" ]; then
+    echo "Error: DATABASE_URL is not set. Add it to .env or export it."
+    exit 1
+  fi
+
+  echo "This will DROP all tables in: ${DATABASE_URL%%@*}@..."
+  read -rp "Are you sure? [y/N] " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+
+  echo "Dropping all tables..."
+  node --input-type=module <<'JS'
+import postgres from "postgres";
+const sql = postgres(process.env.DATABASE_URL);
+const tables = await sql`
+  SELECT tablename FROM pg_tables
+  WHERE schemaname = 'public'
+`;
+if (tables.length === 0) {
+  console.log("No tables to drop.");
+} else {
+  const names = tables.map(t => `"${t.tablename}"`).join(", ");
+  await sql.unsafe(`DROP TABLE ${names} CASCADE`);
+  console.log(`Dropped: ${names}`);
+}
+await sql.end();
+JS
+
+  echo "Re-pushing schema..."
+  npx drizzle-kit push
+  echo "Done. Fresh database ready."
+}
+
+cmd_studio() {
+  exec npx drizzle-kit studio
+}
+
+cmd_typecheck() {
+  exec npx tsc --noEmit
+}
+
+case "${1:-}" in
+  run)        shift; cmd_run "$@" ;;
+  build)      shift; cmd_build "$@" ;;
+  test)       shift; cmd_test "$@" ;;
+  test:watch) shift; cmd_test_watch "$@" ;;
+  migrate)    shift; cmd_migrate "$@" ;;
+  generate)   shift; cmd_generate "$@" ;;
+  push)       shift; cmd_push "$@" ;;
+  wipedb)     shift; cmd_wipedb "$@" ;;
+  studio)     shift; cmd_studio "$@" ;;
+  typecheck)  shift; cmd_typecheck "$@" ;;
+  *)          usage; exit 1 ;;
+esac

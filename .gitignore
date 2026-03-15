@@ -5,3 +5,5 @@ dist/
 .vinxi/
 .vite/
 src/routeTree.gen.ts
+.env
+.env.local

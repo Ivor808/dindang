@@ -1,38 +1,46 @@
-import { randomBytes, createCipheriv, createDecipheriv, scryptSync } from "crypto";
-import { hostname, homedir } from "os";
+import { randomBytes, scryptSync, createCipheriv, createDecipheriv } from "crypto";
 
-const ALGO = "aes-256-gcm";
-const KEY_LEN = 32;
-const IV_LEN = 16;
-const SALT_LEN = 16;
+const ALGORITHM = "aes-256-gcm";
+const SCRYPT_N = 65536;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const KEY_LENGTH = 32;
+const IV_LENGTH = 12;
+const SALT_LENGTH = 16;
 
-function deriveKey(password: string, salt: Buffer): Buffer {
-  return scryptSync(password, salt, KEY_LEN);
+function getSecret(): string {
+  const secret = process.env.DINDANG_ENCRYPTION_SECRET;
+  if (!secret) throw new Error("DINDANG_ENCRYPTION_SECRET environment variable is required");
+  return secret;
 }
 
-function getMachineId(): string {
-  return `${hostname()}-${homedir()}`;
+export function deriveKey(scopeId: string): Buffer {
+  const secret = getSecret();
+  return scryptSync(secret, scopeId, KEY_LENGTH, {
+    N: SCRYPT_N,
+    r: SCRYPT_R,
+    p: SCRYPT_P,
+    maxmem: 128 * SCRYPT_N * SCRYPT_R * 2,
+  });
 }
 
-export function encrypt(plaintext: string): string {
-  const salt = randomBytes(SALT_LEN);
-  const key = deriveKey(getMachineId(), salt);
-  const iv = randomBytes(IV_LEN);
-  const cipher = createCipheriv(ALGO, key, iv);
+export function encrypt(plaintext: string, key: Buffer): string {
+  const salt = randomBytes(SALT_LENGTH);
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv(ALGORITHM, key, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return [salt, iv, tag, encrypted].map((b) => b.toString("hex")).join(":");
+  const authTag = cipher.getAuthTag();
+  return [salt, iv, authTag, encrypted].map((b) => b.toString("hex")).join(":");
 }
 
-export function decrypt(encoded: string): string {
-  const [saltHex, ivHex, tagHex, dataHex] = encoded.split(":");
-  if (!saltHex || !ivHex || !tagHex || !dataHex) throw new Error("Invalid encrypted format");
-  const salt = Buffer.from(saltHex, "hex");
-  const iv = Buffer.from(ivHex, "hex");
-  const tag = Buffer.from(tagHex, "hex");
-  const data = Buffer.from(dataHex, "hex");
-  const key = deriveKey(getMachineId(), salt);
-  const decipher = createDecipheriv(ALGO, key, iv);
-  decipher.setAuthTag(tag);
+export function decrypt(ciphertext: string, key: Buffer): string {
+  const parts = ciphertext.split(":");
+  if (parts.length !== 4) throw new Error("Invalid encrypted format");
+  const [, ivHex, authTagHex, dataHex] = parts;
+  const iv = Buffer.from(ivHex!, "hex");
+  const authTag = Buffer.from(authTagHex!, "hex");
+  const data = Buffer.from(dataHex!, "hex");
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
   return decipher.update(data) + decipher.final("utf8");
 }

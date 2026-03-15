@@ -1,0 +1,122 @@
+import Docker from "dockerode";
+import type { AgentRuntime, AgentRuntimeOptions, Transport } from "~/lib/transport";
+import { DockerTransport } from "~/server/transports/docker";
+
+const LABEL = "dindang.managed";
+const IMAGE = "node:22-slim";
+
+export class DockerAgentRuntime implements AgentRuntime {
+  private docker: Docker;
+
+  constructor(docker?: Docker) {
+    this.docker = docker ?? new Docker();
+  }
+
+  async create(options: AgentRuntimeOptions): Promise<{ remoteId: string; hostPort?: number }> {
+    const stream = await this.docker.pull(IMAGE);
+    await new Promise<void>((resolve, reject) => {
+      this.docker.modem.followProgress(stream, (err: Error | null) =>
+        err ? reject(err) : resolve()
+      );
+    });
+
+    const envArr = Object.entries(options.env).map(([k, v]) => `${k}=${v}`);
+    const volumeName = `dindang-${options.name}`;
+
+    const container = await this.docker.createContainer({
+      Image: IMAGE,
+      name: options.name,
+      Labels: { [LABEL]: "true", "dindang.agent": options.name },
+      Tty: true,
+      OpenStdin: true,
+      Env: envArr,
+      Cmd: ["bash", "-c", "trap 'exit 0' TERM; while true; do sleep 1; done"],
+      HostConfig: {
+        Binds: [`${volumeName}:/home`],
+      },
+    });
+    await container.start();
+
+    const info = await container.inspect();
+    return { remoteId: info.Id };
+  }
+
+  async redeploy(remoteId: string, options: AgentRuntimeOptions): Promise<{ remoteId: string; hostPort?: number }> {
+    const oldInfo = await this.docker.getContainer(remoteId).inspect();
+    const oldName = oldInfo.Name.replace(/^\//, "");
+    const volumeName = `dindang-${oldName}`;
+
+    try { await this.docker.getContainer(remoteId).stop(); } catch { /* may already be stopped */ }
+    await this.docker.getContainer(remoteId).remove();
+
+    const envArr = Object.entries(options.env).map(([k, v]) => `${k}=${v}`);
+
+    const container = await this.docker.createContainer({
+      Image: IMAGE,
+      name: oldName,
+      Labels: { [LABEL]: "true", "dindang.agent": oldName },
+      Tty: true,
+      OpenStdin: true,
+      Env: envArr,
+      Cmd: ["bash", "-c", "trap 'exit 0' TERM; while true; do sleep 1; done"],
+      HostConfig: {
+        Binds: [`${volumeName}:/home`],
+      },
+    });
+    await container.start();
+
+    const info = await container.inspect();
+    return { remoteId: info.Id };
+  }
+
+  async stop(remoteId: string): Promise<void> {
+    await this.docker.getContainer(remoteId).stop();
+  }
+
+  async remove(remoteId: string): Promise<void> {
+    const container = this.docker.getContainer(remoteId);
+    let volumeName: string | undefined;
+    try {
+      const info = await container.inspect();
+      const name = info.Name.replace(/^\//, "");
+      volumeName = `dindang-${name}`;
+    } catch { /* container may not exist */ }
+    try { await container.stop(); } catch { /* may already be stopped */ }
+    await container.remove();
+    if (volumeName) {
+      try { await this.docker.getVolume(volumeName).remove(); } catch { /* volume may not exist */ }
+    }
+  }
+
+  async getTransport(remoteId: string): Promise<Transport> {
+    return new DockerTransport(this.docker.getContainer(remoteId));
+  }
+
+  async getContainerIp(remoteId: string): Promise<string | undefined> {
+    try {
+      const info = await this.docker.getContainer(remoteId).inspect();
+      return info.NetworkSettings?.IPAddress || undefined;
+    } catch { return undefined; }
+  }
+
+  async isRunning(remoteId: string): Promise<boolean> {
+    try {
+      const info = await this.docker.getContainer(remoteId).inspect();
+      return info.State.Running === true;
+    } catch { return false; }
+  }
+
+  /** List all containers managed by dindang (any state). */
+  async listManaged(): Promise<{ id: string; name: string; running: boolean }[]> {
+    const containers = await this.docker.listContainers({
+      all: true,
+      filters: { label: [LABEL] },
+    });
+    return containers.map((c) => ({
+      id: c.Id,
+      name: (c.Names[0] ?? "").replace(/^\//, ""),
+      running: c.State === "running",
+    }));
+  }
+
+}

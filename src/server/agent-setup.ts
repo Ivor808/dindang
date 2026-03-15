@@ -111,6 +111,7 @@ export async function setupAgent(transport: Transport, options: AgentSetupOption
 
   // Write minimal tmux config for the dev user
   const tmuxConf = [
+    "set -g default-terminal 'xterm-256color'", // keep TERM consistent with xterm.js
     "set -g aggressive-resize on",   // resize window to current client, not smallest
     "set -g status off",             // hide status bar (dindang has its own UI chrome)
     "set -g mouse on",               // allow mouse scrollback

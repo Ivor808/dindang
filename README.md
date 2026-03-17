@@ -1,33 +1,40 @@
 # dindang
 
-Orchestrate multiple AI coding agents working on your codebase in parallel. Each agent gets its own isolated container with a full copy of your project — separate branch, separate infrastructure, separate dev environment. Like having a team of developers, each working independently on different tasks.
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-required-blue?logo=docker)](https://docs.docker.com/get-docker/)
+
+**Run a team of AI coding agents in parallel — each in its own container, branch, and dev environment.**
+
+Spawn agents that clone your repo, set up the project, and work independently on different tasks. Watch them all from a single dashboard with live terminals in the browser.
+
+<!-- TODO: Add screenshot or demo GIF here -->
 
 ## Quick Start
-
-Requires [Docker](https://docs.docker.com/get-docker/).
 
 ```bash
 curl -O https://raw.githubusercontent.com/runa/dindang/master/docker-compose.yml
 docker compose up
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). Requires [Docker](https://docs.docker.com/get-docker/).
 
-## What It Does
+## Features
 
-1. **Configure a project** — repo URL, setup command, AI CLI (Claude Code or Codex)
-2. **Spawn agents** — each gets its own container, branch, and isolated infrastructure
-3. **Watch them work** — live terminals in the browser, status tracking, preview of dev servers
-4. **Scale out** — run agents on local Docker, remote servers via SSH, or direct SSH terminals
+- **Isolated containers** — each agent gets its own Docker container, git branch, and `docker compose` namespace. No conflicts between agents working on the same project.
+- **Live browser terminal** — watch agents work in real-time via xterm.js.
+- **Dev server preview** — each agent's dev server port is published and accessible from your browser.
+- **Multi-machine** — run agents on local Docker, remote servers via SSH, or direct SSH terminals.
+- **Infrastructure isolation** — each agent's `docker compose up` is automatically namespaced, so agents can stand up their own databases, caches, and services without stepping on each other.
 
-Each agent's `docker compose up` is namespaced automatically — no conflicts between agents running the same project.
+## Works With
 
-## Configuration
+- [Claude Code](https://github.com/anthropics/claude-code) by Anthropic
+- [Codex CLI](https://github.com/openai/codex) by OpenAI
+- Any terminal-based AI coding tool
 
-| Variable | Default | Description |
-|---|---|---|
-| `DINDANG_ENCRYPTION_SECRET` | Auto-generated | Encrypts stored credentials. Persisted on first run. |
-| `DINDANG_CALLBACK_URL` | `http://host.docker.internal:3000` | How agents call back to dindang |
+## How It Works
+
+dindang creates a Docker container per agent, clones your repo, installs the AI CLI, and runs your project's setup command. A WebSocket bridge streams each terminal to the browser. Each container gets `COMPOSE_PROJECT_NAME` set to the agent name, so any Docker Compose services the project needs are fully isolated per agent. Credentials are encrypted at rest.
 
 ## Development
 
@@ -47,6 +54,10 @@ npm run build        # Production build
 npm start            # Production server
 npm test             # Run tests
 ```
+
+## Contributing
+
+Contributions welcome. Open an issue or submit a PR.
 
 ## License
 

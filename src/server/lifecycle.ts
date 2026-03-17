@@ -2,6 +2,8 @@ import { eq } from "drizzle-orm";
 import { db } from "~/db";
 import { agents, machines } from "~/db/schema";
 import { getRuntimeForMachine } from "~/server/machine-registry";
+import { isLocalMode } from "~/lib/mode";
+import { seedLocalUser } from "~/server/seed";
 
 /**
  * Reconcile agents on startup.
@@ -9,6 +11,9 @@ import { getRuntimeForMachine } from "~/server/machine-registry";
  */
 export async function reconcileOnStartup(): Promise<void> {
   try {
+    if (isLocalMode()) {
+      await seedLocalUser();
+    }
     const errorAgents = await db
       .select({
         id: agents.id,

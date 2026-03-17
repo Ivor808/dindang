@@ -34,9 +34,21 @@ function dindangServer(): Plugin {
         }
       });
 
-      // Middleware that delegates to the loaded proxy
+      // Middleware that delegates to the loaded modules
+      let hooksMiddleware: ((req: any, res: any, next: () => void) => void) | null = null;
+      server.httpServer?.on("listening", async () => {
+        try {
+          const hooksMod = await server.ssrLoadModule("./src/server/agent-hooks.ts");
+          hooksMiddleware = hooksMod.agentHooksMiddleware as any;
+        } catch (e) {
+          console.error("Failed to load agent hooks:", e);
+        }
+      });
+
       server.middlewares.use((req, res, next) => {
-        if (proxyMiddleware && req.url?.startsWith("/preview/")) {
+        if (hooksMiddleware && req.url?.startsWith("/api/hooks/")) {
+          hooksMiddleware(req, res, next);
+        } else if (proxyMiddleware && req.url?.startsWith("/preview/")) {
           proxyMiddleware(req, res, next);
         } else {
           next();
@@ -53,6 +65,7 @@ export default defineConfig(({ mode }) => {
   define: {
     "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(env.VITE_SUPABASE_URL),
     "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify(env.VITE_SUPABASE_ANON_KEY),
+    "import.meta.env.VITE_DINDANG_MODE": JSON.stringify(env.DINDANG_MODE || "local"),
   },
   resolve: {
     alias: {

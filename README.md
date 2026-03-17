@@ -12,7 +12,7 @@ Spawn agents that clone your repo, set up the project, and work independently on
 ## Quick Start
 
 ```bash
-curl -O https://raw.githubusercontent.com/runa/dindang/master/docker-compose.yml
+curl -O https://raw.githubusercontent.com/Ivor808/dindang/master/docker-compose.yml
 docker compose up
 ```
 
@@ -39,7 +39,7 @@ dindang creates a Docker container per agent, clones your repo, installs the AI 
 ## Development
 
 ```bash
-git clone https://github.com/runa/dindang.git
+git clone https://github.com/Ivor808/dindang.git
 cd dindang
 npm install
 docker compose up postgres -d

@@ -16,7 +16,7 @@ services:
 
   dindang:
     # Pre-built image (uncomment after first push to ghcr.io):
-    # image: ghcr.io/runa/dindang:latest
+    # image: ghcr.io/ivor808/dindang:latest
     build: .
     ports:
       - "3000:3000"

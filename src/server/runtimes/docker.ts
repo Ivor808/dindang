@@ -4,6 +4,7 @@ import { DockerTransport } from "~/server/transports/docker";
 
 const LABEL = "dindang.managed";
 const IMAGE = "node:22-slim";
+const NETWORK = process.env.DINDANG_DOCKER_NETWORK || "";
 
 export class DockerAgentRuntime implements AgentRuntime {
   private docker: Docker;
@@ -32,7 +33,8 @@ export class DockerAgentRuntime implements AgentRuntime {
       Env: envArr,
       Cmd: ["bash", "-c", "trap 'exit 0' TERM; while true; do sleep 1; done"],
       HostConfig: {
-        Binds: [`${volumeName}:/home`],
+        Binds: [`${volumeName}:/home`, "/var/run/docker.sock:/var/run/docker.sock"],
+        NetworkMode: NETWORK || undefined,
       },
     });
     await container.start();
@@ -60,7 +62,8 @@ export class DockerAgentRuntime implements AgentRuntime {
       Env: envArr,
       Cmd: ["bash", "-c", "trap 'exit 0' TERM; while true; do sleep 1; done"],
       HostConfig: {
-        Binds: [`${volumeName}:/home`],
+        Binds: [`${volumeName}:/home`, "/var/run/docker.sock:/var/run/docker.sock"],
+        NetworkMode: NETWORK || undefined,
       },
     });
     await container.start();
@@ -76,15 +79,33 @@ export class DockerAgentRuntime implements AgentRuntime {
   async remove(remoteId: string): Promise<void> {
     const container = this.docker.getContainer(remoteId);
     let volumeName: string | undefined;
+    let agentName: string | undefined;
     try {
       const info = await container.inspect();
       const name = info.Name.replace(/^\//, "");
       volumeName = `dindang-${name}`;
+      agentName = name;
     } catch { /* container may not exist */ }
     try { await container.stop(); } catch { /* may already be stopped */ }
     await container.remove();
     if (volumeName) {
       try { await this.docker.getVolume(volumeName).remove(); } catch { /* volume may not exist */ }
+    }
+    // Clean up any Docker Compose containers the agent created
+    if (agentName) {
+      try {
+        const composeContainers = await this.docker.listContainers({
+          all: true,
+          filters: { label: [`com.docker.compose.project=${agentName}`] },
+        });
+        for (const c of composeContainers) {
+          try {
+            const ct = this.docker.getContainer(c.Id);
+            try { await ct.stop(); } catch { /* may already be stopped */ }
+            await ct.remove();
+          } catch { /* best effort */ }
+        }
+      } catch { /* best effort */ }
     }
   }
 
@@ -95,6 +116,10 @@ export class DockerAgentRuntime implements AgentRuntime {
   async getContainerIp(remoteId: string): Promise<string | undefined> {
     try {
       const info = await this.docker.getContainer(remoteId).inspect();
+      // Check named network first (for Docker Compose), fall back to default bridge
+      if (NETWORK && info.NetworkSettings?.Networks?.[NETWORK]) {
+        return info.NetworkSettings.Networks[NETWORK].IPAddress || undefined;
+      }
       return info.NetworkSettings?.IPAddress || undefined;
     } catch { return undefined; }
   }

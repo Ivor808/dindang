@@ -12,6 +12,16 @@ import { toErrorMessage } from "~/lib/errors";
 import type { Agent } from "~/lib/types";
 import type { ExecResult } from "~/lib/transport";
 
+async function getAgentByName(name: string, orgId: string) {
+  const result = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.name, name), eq(agents.orgId, orgId)))
+    .limit(1);
+  if (result.length === 0) throw new Error("Agent not found");
+  return result[0]!;
+}
+
 function rowToAgent(row: typeof agents.$inferSelect): Agent {
   return {
     id: row.id,
@@ -24,6 +34,8 @@ function rowToAgent(row: typeof agents.$inferSelect): Agent {
     workDir: row.workDir ?? "",
     status: row.status,
     errorMessage: row.errorMessage ?? undefined,
+    color: row.color ?? undefined,
+    busySince: row.busySince?.toISOString() ?? undefined,
     createdAt: row.createdAt.toISOString(),
     hostPort: row.hostPort ?? undefined,
   };
@@ -49,13 +61,13 @@ export const getAgent = createServerFn({ method: "GET" })
     const out = rowToAgent(agent);
 
     // Resolve preview URL based on machine type
-    if (agent.machineId && agent.hostPort) {
+    if (agent.machineId) {
       const machineRows = await db.select().from(machines).where(eq(machines.id, agent.machineId)).limit(1);
       const machine = machineRows[0];
       if (machine) {
         if (machine.type === "local") {
           out.previewUrl = `/preview/${agent.name}/`;
-        } else {
+        } else if (agent.hostPort) {
           out.previewUrl = `http://${machine.host}:${agent.hostPort}`;
         }
       }
@@ -104,7 +116,9 @@ export const createAgent = createServerFn({ method: "POST" })
     }
 
     // Build env vars
-    const env: Record<string, string> = {};
+    const env: Record<string, string> = {
+      COMPOSE_PROJECT_NAME: name,
+    };
     if (githubToken) env.GITHUB_TOKEN = githubToken;
 
     // Get Anthropic key
@@ -416,4 +430,37 @@ export const removeAgent = createServerFn({ method: "POST" })
       .where(eq(agents.id, agent.id));
 
     return { ok: true };
+  });
+
+export const renameAgent = createServerFn({ method: "POST" })
+  .inputValidator((data: { name: string; newName: string }) => data)
+  .handler(async ({ data }) => {
+    const { orgId } = await requireAuthWithOrg();
+    const agent = await getAgentByName(data.name, orgId);
+
+    const newName = data.newName.trim();
+    if (!newName) throw new Error("Name cannot be empty");
+    if (!/^[a-zA-Z0-9-]+$/.test(newName)) throw new Error("Name must be alphanumeric with hyphens only");
+
+    const existing = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.name, newName), eq(agents.orgId, orgId)))
+      .limit(1);
+    if (existing.length > 0) throw new Error("An agent with that name already exists");
+
+    await db.update(agents).set({ name: newName }).where(eq(agents.id, agent.id));
+
+    return rowToAgent({ ...agent, name: newName });
+  });
+
+export const setAgentColor = createServerFn({ method: "POST" })
+  .inputValidator((data: { name: string; color: string | null }) => data)
+  .handler(async ({ data }) => {
+    const { orgId } = await requireAuthWithOrg();
+    const agent = await getAgentByName(data.name, orgId);
+
+    await db.update(agents).set({ color: data.color }).where(eq(agents.id, agent.id));
+
+    return rowToAgent({ ...agent, color: data.color });
   });

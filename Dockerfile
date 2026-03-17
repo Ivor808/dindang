@@ -1,7 +1,11 @@
 # Build stage
 FROM node:22-alpine AS builder
 
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
+
+ENV DINDANG_MODE=local
 
 COPY package.json package-lock.json* ./
 RUN npm ci
@@ -9,16 +13,20 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
+# Prune devDeps, reinstall runtime tools
+RUN npm prune --omit=dev && npm install drizzle-kit tsx
+
 # Runtime stage
 FROM node:22-alpine
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
-
-COPY --from=builder /app/.output .output
-COPY --from=builder /app/src/db ./src/db
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist dist
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/server.ts ./server.ts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY docker-entrypoint.sh ./
 

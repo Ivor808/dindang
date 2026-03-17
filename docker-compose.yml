@@ -5,8 +5,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: dindang
-    ports:
-      - "5433:5432"
     volumes:
       - dindang-data:/var/lib/postgresql/data
     healthcheck:
@@ -14,8 +12,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   dindang:
+    # Pre-built image (uncomment after first push to ghcr.io):
+    # image: ghcr.io/runa/dindang:latest
     build: .
     ports:
       - "3000:3000"
@@ -23,6 +24,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/dindang
       DINDANG_MODE: local
       DINDANG_CALLBACK_URL: http://host.docker.internal:3000
+      DINDANG_DOCKER_NETWORK: dindang_default
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -31,6 +33,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   dindang-data:

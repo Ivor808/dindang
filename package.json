@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite dev --port 3000 --host 0.0.0.0",
     "build": "vite build",
-    "start": "node .output/server/index.mjs",
+    "start": "node --import tsx server.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -34,8 +34,9 @@
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.9",
     "tailwindcss": "^4.2.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vite": "^6.4.1",
+    "vite": "^7.3.1",
     "vitest": "^4.0.18"
   }
 }

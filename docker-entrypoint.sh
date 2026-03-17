@@ -22,4 +22,4 @@ echo "[entrypoint] applying database schema..."
 npx drizzle-kit push --force
 
 echo "[entrypoint] starting dindang..."
-exec node .output/server/index.mjs
+exec node --import tsx server.ts

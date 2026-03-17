@@ -1,7 +1,9 @@
 node_modules
-.output
+dist
 .env
 .git
+.github
 supabase
 docs
+LICENSE
 *.md

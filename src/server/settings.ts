@@ -147,26 +147,37 @@ export const saveCredential = createServerFn({ method: "POST" })
   .inputValidator((data: { provider: "github" | "anthropic"; token: string }) => data)
   .handler(async ({ data }) => {
     const { userId } = await requireAuthWithOrg();
-    const key = deriveKey(userId);
-    const encryptedToken = encrypt(data.token, key);
-
-    await db
-      .insert(userCredentials)
-      .values({
-        userId,
-        provider: data.provider,
-        encryptedToken,
-      })
-      .onConflictDoUpdate({
-        target: [userCredentials.userId, userCredentials.provider],
-        set: {
-          encryptedToken,
-          updatedAt: new Date(),
-        },
-      });
-
-    return { ok: true };
+    return upsertCredential(userId, data.provider, data.token);
   });
+
+export const saveProviderToken = createServerFn({ method: "POST" })
+  .inputValidator((data: { provider: "github" | "anthropic"; token: string }) => data)
+  .handler(async ({ data }) => {
+    const { userId } = await requireAuthWithOrg();
+    return upsertCredential(userId, data.provider, data.token);
+  });
+
+async function upsertCredential(userId: string, provider: "github" | "anthropic", token: string) {
+  const key = deriveKey(userId);
+  const encryptedToken = encrypt(token, key);
+
+  await db
+    .insert(userCredentials)
+    .values({
+      userId,
+      provider,
+      encryptedToken,
+    })
+    .onConflictDoUpdate({
+      target: [userCredentials.userId, userCredentials.provider],
+      set: {
+        encryptedToken,
+        updatedAt: new Date(),
+      },
+    });
+
+  return { ok: true };
+}
 
 export const getCredentialStatus = createServerFn({ method: "GET" }).handler(async () => {
   const { userId } = await requireAuthWithOrg();

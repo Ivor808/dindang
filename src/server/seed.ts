@@ -1,8 +1,6 @@
 import { db } from "~/db";
 import { orgs, orgMembers } from "~/db/schema";
-
-const LOCAL_USER_ID = "00000000-0000-0000-0000-000000000000";
-const LOCAL_ORG_ID = "00000000-0000-0000-0000-000000000001";
+import { LOCAL_USER_ID, LOCAL_ORG_ID } from "~/server/auth";
 
 export async function seedLocalUser(): Promise<void> {
   await db

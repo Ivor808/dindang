@@ -4,9 +4,6 @@ let _client: SupabaseClient | null | undefined;
 
 export function getSupabaseBrowserClient(): SupabaseClient | null {
   if (import.meta.env.VITE_DINDANG_MODE === "local") return null;
-
-  if (_client !== undefined) return _client;
-
   return _client ?? null;
 }
 

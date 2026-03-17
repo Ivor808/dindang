@@ -38,7 +38,7 @@ export async function requireRole(
   orgId: string,
   minimumRole: "owner" | "admin" | "member",
 ): Promise<{ role: string }> {
-  if (isLocalMode()) return { role: minimumRole };
+  if (isLocalMode()) return { role: "owner" };
 
   const membership = await db
     .select({ role: orgMembers.role })

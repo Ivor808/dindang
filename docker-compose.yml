@@ -9,6 +9,11 @@ services:
       - "5433:5432"
     volumes:
       - dindang-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   dindang:
     build: .
@@ -18,10 +23,15 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/dindang
       DINDANG_MODE: local
       DINDANG_CALLBACK_URL: http://host.docker.internal:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - dindang-secrets:/app/data
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
 volumes:
   dindang-data:
+  dindang-secrets:

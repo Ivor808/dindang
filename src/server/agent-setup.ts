@@ -42,7 +42,9 @@ export async function setupAgent(transport: Transport, options: AgentSetupOption
   const hasGit = await transport.exec(["which", "git"]);
   if (hasGit.exitCode !== 0) {
     onProgress("Installing system dependencies...");
-    await transport.exec(["bash", "-c", "apt-get update -qq && apt-get install -y -qq git curl build-essential sudo procps psmisc lsof tmux"]);
+    await transport.exec(["bash", "-c", "apt-get update -qq && apt-get install -y -qq git curl build-essential sudo procps psmisc lsof tmux locales"]);
+    // Generate UTF-8 locale for proper Unicode rendering (Claude Code UI uses emoji)
+    await transport.exec(["bash", "-c", "sed -i 's/# en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen && locale-gen"]);
   }
 
   // Create non-root dev user with passwordless sudo
@@ -100,8 +102,9 @@ export async function setupAgent(transport: Transport, options: AgentSetupOption
   if (options.aiCli === "claude") {
     const hooksConfig = JSON.stringify({
       hooks: {
-        PostToolUse: [{ hooks: [{ type: "http", url: `${options.callbackUrl}/api/hooks/agent/${options.name}` }] }],
-        Stop: [{ hooks: [{ type: "http", url: `${options.callbackUrl}/api/hooks/agent/${options.name}` }] }],
+        PreToolUse: [{ hooks: [{ type: "http", url: `${options.callbackUrl}/api/hooks/agent/${options.name}/PreToolUse` }] }],
+        PostToolUse: [{ hooks: [{ type: "http", url: `${options.callbackUrl}/api/hooks/agent/${options.name}/PostToolUse` }] }],
+        Stop: [{ hooks: [{ type: "http", url: `${options.callbackUrl}/api/hooks/agent/${options.name}/Stop` }] }],
       },
     });
     await transport.exec(asUser(`mkdir -p ${options.workDir}/.claude`));
@@ -112,9 +115,10 @@ export async function setupAgent(transport: Transport, options: AgentSetupOption
   // Write minimal tmux config for the dev user
   const tmuxConf = [
     "set -g default-terminal 'xterm-256color'", // keep TERM consistent with xterm.js
+    "set -g default-shell '/bin/bash'",          // ensure bash as default shell
+    "set -g default-command 'bash -l'",          // login shell so .bashrc/.profile are sourced
     "set -g aggressive-resize on",   // resize window to current client, not smallest
     "set -g status off",             // hide status bar (dindang has its own UI chrome)
-    "set -g mouse on",               // allow mouse scrollback
     "set -g history-limit 50000",    // generous scrollback
   ].join("\n") + "\n";
   await transport.writeFile("/home/dev/.tmux.conf", tmuxConf);

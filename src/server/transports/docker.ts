@@ -33,9 +33,10 @@ export class DockerTransport implements Transport {
   async openPTY(options?: PTYOptions): Promise<PTYSession> {
     const cwd = options?.cwd ?? "/home/dev";
     const session = (options?.sessionName ?? "main").replace(/'/g, "'\\''");
-    const tmuxCmd = `tmux has-session -t '${session}' 2>/dev/null && tmux attach-session -dt '${session}' || tmux new-session -s '${session}' -c '${cwd.replace(/'/g, "'\\''")}'`;
+    // -A: attach if session exists, create if not. No bash wrapper needed.
+    // tmux spawns the default shell (bash) for new sessions.
     const exec = await this.container.exec({
-      Cmd: ["bash", "-lc", tmuxCmd],
+      Cmd: ["tmux", "new-session", "-As", session, "-c", cwd],
       User: "dev",
       AttachStdin: true,
       AttachStdout: true,
@@ -44,6 +45,8 @@ export class DockerTransport implements Transport {
       Env: [
         "TERM=xterm-256color",
         "HOME=/home/dev",
+        "LANG=en_US.UTF-8",
+        "LC_ALL=en_US.UTF-8",
         `PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin`,
         ...(options?.env ? Object.entries(options.env).map(([k, v]) => `${k}=${v}`) : []),
       ],

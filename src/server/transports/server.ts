@@ -31,13 +31,13 @@ export class ServerTransport implements Transport {
       rows: options?.rows,
     });
 
-    // Write docker exec command into the SSH shell — uses tmux so the session
-    // survives WebSocket disconnects (tmux detaches instead of killing the process).
-    // -d on attach-session detaches stale clients so tmux uses the current terminal size.
+    // Exec into container and run tmux directly (no bash wrapper).
+    // tmux new-session spawns a login shell itself, so we don't need bash -l.
     const cwd = options?.cwd ?? "/home/dev";
     const session = options?.sessionName ?? "main";
-    const tmuxCmd = `tmux has-session -t ${session} 2>/dev/null && tmux attach-session -dt ${session} || tmux new-session -s ${session} -c '${cwd}'`;
-    pty.stream.write(`docker exec -it -u dev -w ${cwd} -e HOME=/home/dev -e PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin ${this.containerId} bash -lc '${tmuxCmd}'\n`);
+    pty.stream.write(
+      `docker exec -it -u dev -w ${cwd} -e HOME=/home/dev -e TERM=xterm-256color -e LANG=en_US.UTF-8 -e LC_ALL=en_US.UTF-8 -e PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin ${this.containerId} tmux new-session -As ${session} -c ${cwd}\n`
+    );
 
     return pty;
   }

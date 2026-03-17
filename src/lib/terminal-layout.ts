@@ -13,6 +13,10 @@ export interface AgentTerminalLayout {
 
 const STORAGE_PREFIX = "dindang:terminal-layout:";
 
+export function uid(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 export function getLayout(agentName: string): AgentTerminalLayout {
   try {
     const raw = localStorage.getItem(STORAGE_PREFIX + agentName);
@@ -26,7 +30,7 @@ export function saveLayout(agentName: string, layout: AgentTerminalLayout): void
 }
 
 export function createDefaultLayout(): AgentTerminalLayout {
-  const id = crypto.randomUUID();
+  const id = uid();
   return {
     tabs: [{ id, name: "terminal", split: "none", sessions: ["term-1"] }],
     activeTabId: id,

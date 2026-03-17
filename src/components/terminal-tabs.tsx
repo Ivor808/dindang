@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { TerminalPane, sendKillSession, sendSyncSessions } from "./terminal-pane";
 import {
-  getLayout, saveLayout, allocateSession, allSessions,
+  getLayout, saveLayout, allocateSession, allSessions, uid,
   type AgentTerminalLayout, type TerminalTab,
 } from "~/lib/terminal-layout";
 
@@ -15,8 +15,11 @@ export function TerminalTabs({ agentName, disabled }: TerminalTabsProps) {
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
 
-  // Persist layout on change
-  useEffect(() => { saveLayout(agentName, layout); }, [agentName, layout]);
+  // Persist layout on change (debounced to avoid localStorage thrashing)
+  useEffect(() => {
+    const timeout = setTimeout(() => saveLayout(agentName, layout), 300);
+    return () => clearTimeout(timeout);
+  }, [agentName, layout]);
 
   // Sync sessions on mount (cleanup orphans)
   useEffect(() => {
@@ -36,7 +39,7 @@ export function TerminalTabs({ agentName, disabled }: TerminalTabsProps) {
   const addTab = () => {
     updateLayout((prev) => {
       const { sessionName, nextSessionNum } = allocateSession(prev);
-      const id = crypto.randomUUID();
+      const id = uid();
       return {
         ...prev,
         nextSessionNum,
@@ -127,7 +130,7 @@ export function TerminalTabs({ agentName, disabled }: TerminalTabsProps) {
         {layout.tabs.map((tab) => (
           <div
             key={tab.id}
-            className={`flex items-center gap-1 px-3 py-1.5 text-xs cursor-pointer border-r border-zinc-800 shrink-0 ${
+            className={`group flex items-center gap-1 px-3 py-1.5 text-xs cursor-pointer border-r border-zinc-800 shrink-0 ${
               tab.id === layout.activeTabId
                 ? "bg-zinc-800 text-zinc-100"
                 : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
@@ -149,7 +152,20 @@ export function TerminalTabs({ agentName, disabled }: TerminalTabsProps) {
                 onClick={(e) => e.stopPropagation()}
               />
             ) : (
-              <span>{tab.name}</span>
+              <>
+                <span>{tab.name}</span>
+                {tab.id === layout.activeTabId && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); startRename(tab); }}
+                    className="text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Rename tab"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                    </svg>
+                  </button>
+                )}
+              </>
             )}
             {layout.tabs.length > 1 && (
               <button

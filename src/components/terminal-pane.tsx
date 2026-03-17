@@ -3,6 +3,11 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
+function wsUrl(agentName: string, sessionName: string): string {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/ws/terminal/${agentName}/${sessionName}`;
+}
+
 interface TerminalPaneProps {
   agentName: string;
   sessionName: string;
@@ -38,10 +43,7 @@ export function TerminalPane({ agentName, sessionName, active }: TerminalPanePro
     termRef.current = term;
     fitRef.current = fit;
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(
-      `${protocol}//${window.location.host}/ws/terminal/${agentName}/${sessionName}`
-    );
+    const ws = new WebSocket(wsUrl(agentName, sessionName));
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
@@ -91,7 +93,7 @@ export function TerminalPane({ agentName, sessionName, active }: TerminalPanePro
     <div
       ref={containerRef}
       className="flex-1 min-h-0 min-w-0 p-1"
-      onClick={() => termRef.current?.focus()}
+      onMouseDown={() => termRef.current?.focus()}
     />
   );
 }

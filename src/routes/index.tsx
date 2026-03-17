@@ -1,6 +1,6 @@
 import { createFileRoute, useRouter, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { listAgents, createAgent } from "~/server/agents";
+import { listAgents, createAgent, removeAgent, redeployAgent, renameAgent, setAgentColor } from "~/server/agents";
 import { listProjects, listMachinesApi } from "~/server/settings";
 import { AgentCard } from "~/components/agent-card";
 import { toErrorMessage } from "~/lib/errors";
@@ -46,19 +46,20 @@ function Dashboard() {
     }
   };
 
-  const hasProvisioning = agents.some((a) => a.status === "provisioning");
+  const hasActive = agents.some((a) => a.status === "provisioning" || a.status === "busy");
 
-  // Auto-refresh while any agent is provisioning
+  // Auto-refresh while any agent is provisioning or busy
   useEffect(() => {
-    if (!hasProvisioning) return;
+    if (!hasActive) return;
     const interval = setInterval(async () => {
       if (document.visibilityState === "hidden") return;
       await router.invalidate();
     }, 3000);
     return () => clearInterval(interval);
-  }, [hasProvisioning, router]);
+  }, [hasActive, router]);
 
   const projectMap = new Map(projects.map((p: Project) => [p.id, p.name]));
+  const projectCliMap = new Map(projects.map((p: Project) => [p.id, p.aiCli]));
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -130,6 +131,39 @@ function Dashboard() {
               key={agent.id}
               agent={agent}
               projectName={projectMap.get(agent.projectId)}
+              aiCli={projectCliMap.get(agent.projectId)}
+              onRemove={async () => {
+                try {
+                  await removeAgent({ data: agent.name });
+                  await router.invalidate();
+                } catch (e) {
+                  setError(toErrorMessage(e));
+                }
+              }}
+              onRedeploy={async () => {
+                try {
+                  await redeployAgent({ data: agent.name });
+                  await router.invalidate();
+                } catch (e) {
+                  setError(toErrorMessage(e));
+                }
+              }}
+              onRename={async (newName) => {
+                try {
+                  await renameAgent({ data: { name: agent.name, newName } });
+                  await router.invalidate();
+                } catch (e) {
+                  setError(toErrorMessage(e));
+                }
+              }}
+              onColorChange={async (color) => {
+                try {
+                  await setAgentColor({ data: { name: agent.name, color } });
+                  await router.invalidate();
+                } catch (e) {
+                  setError(toErrorMessage(e));
+                }
+              }}
             />
           ))}
         </div>

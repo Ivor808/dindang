@@ -77,6 +77,8 @@ export const agents = pgTable("agents", {
     .default("provisioning")
     .notNull(),
   errorMessage: text("error_message"),
+  color: text("color"),
+  busySince: timestamp("busy_since", { withTimezone: true }),
   hostPort: integer("host_port"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

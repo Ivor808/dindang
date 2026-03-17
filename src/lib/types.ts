@@ -14,6 +14,8 @@ export interface Agent {
   workDir: string;
   status: AgentStatus;
   errorMessage?: string;
+  color?: string;
+  busySince?: string;
   createdAt: string;
   hostPort?: number;
   previewUrl?: string;

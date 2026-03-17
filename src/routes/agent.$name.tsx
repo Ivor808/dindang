@@ -12,9 +12,14 @@ export const Route = createFileRoute("/agent/$name")({
   component: AgentDetail,
 });
 
-/** Replace 127.0.0.1/localhost in preview URLs with the current browser hostname */
+/** Resolve preview URLs to use the browser's current hostname */
 function resolvePreviewUrl(url: string): string {
-  if (url.startsWith("/")) return url; // relative proxy path, keep as-is
+  // Local Docker: __PREVIEW_PORT__<port> → use browser hostname with that port
+  if (url.startsWith("__PREVIEW_PORT__")) {
+    const port = url.replace("__PREVIEW_PORT__", "");
+    return `${window.location.protocol}//${window.location.hostname}:${port}`;
+  }
+  if (url.startsWith("/")) return url;
   try {
     const parsed = new URL(url);
     if (parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost") {

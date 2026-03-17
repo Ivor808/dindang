@@ -24,6 +24,14 @@ export class DockerAgentRuntime implements AgentRuntime {
     const envArr = Object.entries(options.env).map(([k, v]) => `${k}=${v}`);
     const volumeName = `dindang-${options.name}`;
 
+    const portBindings: Record<string, { HostPort: string }[]> = {};
+    const exposedPorts: Record<string, object> = {};
+    if (options.devPort) {
+      const portKey = `${options.devPort}/tcp`;
+      exposedPorts[portKey] = {};
+      portBindings[portKey] = [{ HostPort: "0" }]; // 0 = let Docker pick a free port
+    }
+
     const container = await this.docker.createContainer({
       Image: IMAGE,
       name: options.name,
@@ -31,16 +39,25 @@ export class DockerAgentRuntime implements AgentRuntime {
       Tty: true,
       OpenStdin: true,
       Env: envArr,
+      ExposedPorts: exposedPorts,
       Cmd: ["bash", "-c", "trap 'exit 0' TERM; while true; do sleep 1; done"],
       HostConfig: {
         Binds: [`${volumeName}:/home`, "/var/run/docker.sock:/var/run/docker.sock"],
         NetworkMode: NETWORK || undefined,
+        PortBindings: portBindings,
       },
     });
     await container.start();
 
     const info = await container.inspect();
-    return { remoteId: info.Id };
+    let hostPort: number | undefined;
+    if (options.devPort) {
+      const binding = info.NetworkSettings?.Ports?.[`${options.devPort}/tcp`];
+      if (binding?.[0]?.HostPort) {
+        hostPort = parseInt(binding[0].HostPort, 10);
+      }
+    }
+    return { remoteId: info.Id, hostPort };
   }
 
   async redeploy(remoteId: string, options: AgentRuntimeOptions): Promise<{ remoteId: string; hostPort?: number }> {
@@ -53,6 +70,14 @@ export class DockerAgentRuntime implements AgentRuntime {
 
     const envArr = Object.entries(options.env).map(([k, v]) => `${k}=${v}`);
 
+    const portBindings: Record<string, { HostPort: string }[]> = {};
+    const exposedPorts: Record<string, object> = {};
+    if (options.devPort) {
+      const portKey = `${options.devPort}/tcp`;
+      exposedPorts[portKey] = {};
+      portBindings[portKey] = [{ HostPort: "0" }];
+    }
+
     const container = await this.docker.createContainer({
       Image: IMAGE,
       name: oldName,
@@ -60,16 +85,25 @@ export class DockerAgentRuntime implements AgentRuntime {
       Tty: true,
       OpenStdin: true,
       Env: envArr,
+      ExposedPorts: exposedPorts,
       Cmd: ["bash", "-c", "trap 'exit 0' TERM; while true; do sleep 1; done"],
       HostConfig: {
         Binds: [`${volumeName}:/home`, "/var/run/docker.sock:/var/run/docker.sock"],
         NetworkMode: NETWORK || undefined,
+        PortBindings: portBindings,
       },
     });
     await container.start();
 
     const info = await container.inspect();
-    return { remoteId: info.Id };
+    let hostPort: number | undefined;
+    if (options.devPort) {
+      const binding = info.NetworkSettings?.Ports?.[`${options.devPort}/tcp`];
+      if (binding?.[0]?.HostPort) {
+        hostPort = parseInt(binding[0].HostPort, 10);
+      }
+    }
+    return { remoteId: info.Id, hostPort };
   }
 
   async stop(remoteId: string): Promise<void> {

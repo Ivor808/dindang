@@ -61,13 +61,15 @@ export const getAgent = createServerFn({ method: "GET" })
     const out = rowToAgent(agent);
 
     // Resolve preview URL based on machine type
-    if (agent.machineId) {
+    if (agent.machineId && agent.hostPort) {
       const machineRows = await db.select().from(machines).where(eq(machines.id, agent.machineId)).limit(1);
       const machine = machineRows[0];
       if (machine) {
         if (machine.type === "local") {
-          out.previewUrl = `/preview/${agent.name}/`;
-        } else if (agent.hostPort) {
+          // Use hostPort directly — browser connects to host:port where dev server is at root
+          // The URL uses the browser's current hostname so it works for both localhost and remote access
+          out.previewUrl = `__PREVIEW_PORT__${agent.hostPort}`;
+        } else {
           out.previewUrl = `http://${machine.host}:${agent.hostPort}`;
         }
       }

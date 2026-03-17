@@ -1,33 +1,18 @@
-import { createServerClient } from "@supabase/ssr";
-import { getRequest } from "@tanstack/react-start/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "~/db";
 import { orgMembers, orgs } from "~/db/schema";
+import { isLocalMode } from "~/lib/mode";
 
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
-
-export function createSupabaseServerClient(request: Request) {
-  const cookies = parseCookies(request.headers.get("cookie") ?? "");
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll: () => cookies,
-      setAll: () => {},
-    },
-  });
-}
-
-function parseCookies(cookieHeader: string): { name: string; value: string }[] {
-  if (!cookieHeader) return [];
-  return cookieHeader.split(";").map((c) => {
-    const [name, ...rest] = c.trim().split("=");
-    return { name: name!, value: rest.join("=") };
-  });
-}
+const LOCAL_USER_ID = "00000000-0000-0000-0000-000000000000";
+const LOCAL_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
 export async function requireAuth(): Promise<string> {
+  if (isLocalMode()) return LOCAL_USER_ID;
+
+  const { createServerClient } = await import("@supabase/ssr");
+  const { getRequest } = await import("@tanstack/react-start/server");
   const request = getRequest();
-  const supabase = createSupabaseServerClient(request);
+  const supabase = createSupabaseServerClient(createServerClient, request);
   const {
     data: { user },
     error,
@@ -37,6 +22,8 @@ export async function requireAuth(): Promise<string> {
 }
 
 export async function getActiveOrgId(userId: string): Promise<string> {
+  if (isLocalMode()) return LOCAL_ORG_ID;
+
   const membership = await db
     .select({ orgId: orgMembers.orgId })
     .from(orgMembers)
@@ -51,6 +38,8 @@ export async function requireRole(
   orgId: string,
   minimumRole: "owner" | "admin" | "member",
 ): Promise<{ role: string }> {
+  if (isLocalMode()) return { role: minimumRole };
+
   const membership = await db
     .select({ role: orgMembers.role })
     .from(orgMembers)
@@ -76,6 +65,8 @@ export async function createOrgForUser(userId: string, displayName: string): Pro
 }
 
 export async function ensureOrg(userId: string): Promise<string> {
+  if (isLocalMode()) return LOCAL_ORG_ID;
+
   const membership = await db
     .select({ orgId: orgMembers.orgId })
     .from(orgMembers)
@@ -83,8 +74,10 @@ export async function ensureOrg(userId: string): Promise<string> {
     .limit(1);
   if (membership.length > 0) return membership[0]!.orgId;
 
+  const { createServerClient } = await import("@supabase/ssr");
+  const { getRequest } = await import("@tanstack/react-start/server");
   const request = getRequest();
-  const supabase = createSupabaseServerClient(request);
+  const supabase = createSupabaseServerClient(createServerClient, request);
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -93,7 +86,33 @@ export async function ensureOrg(userId: string): Promise<string> {
 }
 
 export async function requireAuthWithOrg(): Promise<{ userId: string; orgId: string }> {
+  if (isLocalMode()) return { userId: LOCAL_USER_ID, orgId: LOCAL_ORG_ID };
+
   const userId = await requireAuth();
   const orgId = await ensureOrg(userId);
   return { userId, orgId };
+}
+
+export { LOCAL_USER_ID, LOCAL_ORG_ID };
+
+function createSupabaseServerClient(createServerClient: any, request: Request) {
+  const cookies = parseCookies(request.headers.get("cookie") ?? "");
+  return createServerClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookies,
+        setAll: () => {},
+      },
+    },
+  );
+}
+
+function parseCookies(cookieHeader: string): { name: string; value: string }[] {
+  if (!cookieHeader) return [];
+  return cookieHeader.split(";").map((c) => {
+    const [name, ...rest] = c.trim().split("=");
+    return { name: name!, value: rest.join("=") };
+  });
 }

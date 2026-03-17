@@ -7,7 +7,8 @@
 
 Spawn agents that clone your repo, set up the project, and work independently on different tasks. Watch them all from a single dashboard with live terminals in the browser.
 
-<!-- TODO: Add screenshot or demo GIF here -->
+<img width="1271" height="570" alt="image" src="https://github.com/user-attachments/assets/f7c8d792-831b-4175-8424-4a743593260c" />
+
 
 ## Quick Start
 

@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dindang
+    ports:
+      - "5433:5432"
+    volumes:
+      - dindang-data:/var/lib/postgresql/data
+
+  dindang:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/dindang
+      DINDANG_MODE: local
+      DINDANG_CALLBACK_URL: http://host.docker.internal:3000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - postgres
+
+volumes:
+  dindang-data:

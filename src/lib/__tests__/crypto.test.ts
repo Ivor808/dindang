@@ -37,9 +37,21 @@ describe("crypto", () => {
     expect(() => decrypt(encrypted, keyB)).toThrow();
   });
 
-  it("throws if DINDANG_ENCRYPTION_SECRET is not set", () => {
+  it("throws if DINDANG_ENCRYPTION_SECRET is not set in hosted mode", () => {
     delete process.env.DINDANG_ENCRYPTION_SECRET;
-    expect(() => deriveKey("user-123")).toThrow("DINDANG_ENCRYPTION_SECRET");
+    process.env.DINDANG_MODE = "hosted";
+    try {
+      expect(() => deriveKey("user-123")).toThrow("DINDANG_ENCRYPTION_SECRET");
+    } finally {
+      delete process.env.DINDANG_MODE;
+    }
+  });
+
+  it("generates ephemeral secret in local mode when DINDANG_ENCRYPTION_SECRET is not set", () => {
+    delete process.env.DINDANG_ENCRYPTION_SECRET;
+    delete process.env.DINDANG_MODE;
+    // Should not throw — returns an ephemeral key
+    expect(() => deriveKey("user-123")).not.toThrow();
   });
 
   it("ciphertext has 4 hex parts", () => {

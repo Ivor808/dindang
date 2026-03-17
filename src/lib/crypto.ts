@@ -8,10 +8,22 @@ const KEY_LENGTH = 32;
 const IV_LENGTH = 12;
 const SALT_LENGTH = 16;
 
+let _generatedSecret: string | undefined;
+
 function getSecret(): string {
   const secret = process.env.DINDANG_ENCRYPTION_SECRET;
-  if (!secret) throw new Error("DINDANG_ENCRYPTION_SECRET environment variable is required");
-  return secret;
+  if (secret) return secret;
+
+  const mode = process.env.DINDANG_MODE || "local";
+  if (mode === "local") {
+    if (!_generatedSecret) {
+      _generatedSecret = randomBytes(32).toString("hex");
+      console.warn("[crypto] no DINDANG_ENCRYPTION_SECRET set — generated ephemeral secret. Credentials will not persist across restarts. Set DINDANG_ENCRYPTION_SECRET in .env for persistence.");
+    }
+    return _generatedSecret;
+  }
+
+  throw new Error("DINDANG_ENCRYPTION_SECRET environment variable is required");
 }
 
 export function deriveKey(scopeId: string): Buffer {

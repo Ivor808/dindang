@@ -92,13 +92,28 @@ Detection via `import.meta.env.VITE_DINDANG_MODE` on the client. Settings link i
 - Local mode: Hide "sign out" button and email display. Keep "settings" link.
 - Hosted mode: Current behavior
 
-### 8. Docker Compose (`docker-compose.yml`)
+### 8. Distribution & Docker Compose
 
-Provide a `docker-compose.yml` for local mode with:
-- Standalone Postgres on port 5433 (avoids conflicts with local Postgres on 5432 and Supabase on 54322/54422)
-- Named volume for data persistence
+**For end users (open source)**: A single `docker-compose.yml` that runs everything — the dindang app container and Postgres. Users don't need Node, npm, or to clone the repo. Just:
 
-Users run `docker compose up -d` then `npm run dev`.
+```bash
+curl -O https://raw.githubusercontent.com/.../docker-compose.yml
+docker compose up
+```
+
+The compose file includes:
+- `dindang` service: pre-built Docker image from a `Dockerfile` (Node app, production build)
+- `postgres` service: standalone Postgres on port 5433, named volume for persistence
+- The dindang container connects to Postgres via Docker networking (not localhost)
+- Runs `drizzle-kit push` on startup to ensure schema is applied
+- Auto-generates `DINDANG_ENCRYPTION_SECRET` if not set (via entrypoint script)
+
+**For developers**: Clone the repo, `docker compose up postgres` (just the DB), then `npm run dev` as usual.
+
+This requires:
+- A `Dockerfile` for the dindang app (multi-stage: build + runtime)
+- A `docker-compose.yml` with both services
+- An entrypoint script that handles first-run setup (migrations, secret generation)
 
 ### 9. Encryption Secret
 
@@ -156,7 +171,9 @@ DINDANG_CALLBACK_URL=http://localhost:3000
 | `src/routes/auth.callback.tsx` | Use facade, redirect to `/` in local mode |
 | `src/routes/settings.tsx` | Conditional credentials UI (PAT vs OAuth), hide team tab, skip `listMembers()` in local |
 | `src/db/index.ts` | Remove `supabase` singleton export |
-| `docker-compose.yml` | New — standalone Postgres for local mode |
+| `Dockerfile` | New — multi-stage build for production dindang image |
+| `docker-compose.yml` | New — dindang app + Postgres for local mode |
+| `docker-entrypoint.sh` | New — first-run setup: migrations, secret generation |
 | `.env.example` | Update with local-mode-friendly defaults and comments |
 | `vite.config.ts` | Expose `VITE_DINDANG_MODE` to client |
 

@@ -22,22 +22,32 @@ Web platform for spawning and managing AI coding agents (Claude Code, Codex CLI)
 ## Commands
 
 ```bash
-npm run dev          # Start dev server on port 3000
-npm run build        # Production build
+npm run dev          # Start dev server on port 3000 (with HMR)
+npm run build        # Production build (client + server)
+npm start            # Run production server
 npm test             # Run vitest
 npm run test:watch   # Watch mode
 ```
 
 ## Environment
 
-Copy `.env.example` to `.env`. Requires Supabase (local via `supabase start` or hosted) and Docker.
+Copy `.env.example` to `.env`. Requires Docker. In local mode (default), only `DATABASE_URL` is needed. For hosted mode, also requires Supabase.
+
+## Production Server
+
+`server.ts` is the production entry point — a standalone Node HTTP server that:
+- Serves the TanStack Start build from `dist/`
+- Attaches WebSocket terminal, agent hooks, preview proxy
+- Runs lifecycle handlers (seeding, reconciliation, shutdown)
+
+In dev mode, the Vite plugin (`dindangServer()` in `vite.config.ts`) handles the same wiring via `configureServer`.
 
 ## Project structure
 
 ```
 src/
   components/       # React components (agent-card, status-badge, machine-card)
-  db/               # Drizzle schema and lazy db/supabase singletons
+  db/               # Drizzle schema and lazy db singleton
   lib/              # Shared types, transport interfaces, utilities
   routes/           # TanStack Router pages (dashboard, agent detail, settings, login)
   server/           # Server functions, runtimes, transports, terminal WS, auth

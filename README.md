@@ -27,6 +27,20 @@ Open [http://localhost:3000](http://localhost:3000). Requires [Docker](https://d
 - **Multi-machine** — run agents on local Docker, remote servers via SSH, or direct SSH terminals.
 - **Infrastructure isolation** — each agent's `docker compose up` is automatically namespaced, so agents can stand up their own databases, caches, and services without stepping on each other.
 
+## Why Not Just Worktrees?
+
+Most multi-agent tools use git worktrees — multiple checkouts on the same machine sharing the same filesystem, network, and Docker daemon. This works for simple projects but breaks down when your project has real infrastructure:
+
+| | Worktrees | dindang |
+|---|---|---|
+| Git branch isolation | Yes | Yes |
+| Separate dependencies | No — shared filesystem | Yes — each container has its own |
+| Database / Docker Compose | Shared — agents conflict | Namespaced per agent |
+| Dev server ports | Conflict unless manually offset | Each agent gets its own port |
+| Remote machines | Same machine only | SSH to any server |
+
+If your project runs `docker compose up` with Postgres, Redis, or a microservice stack — you need real isolation, not just separate git checkouts.
+
 ## Works With
 
 - [Claude Code](https://github.com/anthropics/claude-code) by Anthropic

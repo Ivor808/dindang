@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { createBrowserClient } from "@supabase/ssr";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { initSupabase, isLocalMode } from "~/lib/supabase-client";
 import { toErrorMessage } from "~/lib/errors";
 
 export const Route = createFileRoute("/login")({
@@ -9,17 +9,32 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
-  const supabase = createBrowserClient(
-    import.meta.env.VITE_SUPABASE_URL!,
-    import.meta.env.VITE_SUPABASE_ANON_KEY!,
-  );
 
+  useEffect(() => {
+    if (isLocalMode()) navigate({ to: "/" });
+  }, [navigate]);
+
+  if (isLocalMode()) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-zinc-400">Redirecting...</p>
+      </div>
+    );
+  }
+
+  return <HostedLoginForm />;
+}
+
+function HostedLoginForm() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const signInWithOAuth = async (provider: "github" | "google") => {
+    const supabase = await initSupabase();
+    if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider,
       options: {
@@ -35,10 +50,11 @@ function LoginPage() {
     setLoading(true);
     setError(null);
     try {
+      const supabase = await initSupabase();
+      if (!supabase) return;
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
       if (authError) {
         if (authError.message === "Invalid login credentials") {
-          // Try signing up instead
           const { error: signUpError } = await supabase.auth.signUp({ email, password });
           if (signUpError) throw signUpError;
         } else {

@@ -9,8 +9,8 @@ import {
   createProject,
   editProject,
   deleteProject,
-  saveCredential,
   getCredentialStatus,
+  saveCredential,
   listMembers,
   inviteMember,
   removeMember,
@@ -18,6 +18,7 @@ import {
 } from "~/server/settings";
 import { MachineCard } from "~/components/machine-card";
 import { toErrorMessage } from "~/lib/errors";
+import { isLocalMode, initSupabase } from "~/lib/supabase-client";
 import type { Project, Machine } from "~/lib/types";
 
 type Tab = "projects" | "machines" | "credentials" | "team";
@@ -28,7 +29,7 @@ export const Route = createFileRoute("/settings")({
       loadSettings(),
       listMachinesApi(),
       getCredentialStatus(),
-      listMembers(),
+      isLocalMode() ? Promise.resolve([]) : listMembers(),
     ]);
     return { settings, machines, credStatus, members };
   },
@@ -45,7 +46,7 @@ function SettingsPage() {
     { key: "projects", label: "Projects" },
     { key: "machines", label: "Machines" },
     { key: "credentials", label: "Credentials" },
-    { key: "team", label: "Team" },
+    ...(!isLocalMode() ? [{ key: "team" as Tab, label: "Team" }] : []),
   ];
 
   return (
@@ -602,26 +603,44 @@ function CredentialsTab({
   router: ReturnType<typeof useRouter>;
 }) {
   const [githubToken, setGithubToken] = useState("");
-  const [anthropicKey, setAnthropicKey] = useState("");
-  const [saving, setSaving] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
 
-  const handleSave = async (provider: "github" | "anthropic", token: string) => {
-    if (!token.trim()) return;
-    setSaving(provider);
-    setSaved(null);
+  const handleSaveToken = async () => {
+    if (!githubToken.trim()) return;
+    setSaving(true);
+    setSaved(false);
     setError(null);
     try {
-      await saveCredential({ data: { provider, token: token.trim() } });
-      if (provider === "github") setGithubToken("");
-      else setAnthropicKey("");
-      setSaved(provider);
+      await saveCredential({ data: { provider: "github", token: githubToken.trim() } });
+      setGithubToken("");
+      setSaved(true);
       await router.invalidate();
     } catch (e) {
       setError(toErrorMessage(e));
     } finally {
-      setSaving(null);
+      setSaving(false);
+    }
+  };
+
+  const connectGithub = async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      const supabase = await initSupabase();
+      if (!supabase) return;
+      await supabase.auth.linkIdentity({
+        provider: "github",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          scopes: "repo",
+        },
+      });
+    } catch (e) {
+      setError(toErrorMessage(e));
+      setConnecting(false);
     }
   };
 
@@ -637,60 +656,60 @@ function CredentialsTab({
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
           <label className="block text-xs text-zinc-500 mb-1">
-            GitHub Token
-            {credStatus.hasGithub && (
-              <span className="text-green-500 ml-2">configured</span>
-            )}
+            GitHub
           </label>
-          <p className="text-xs text-zinc-600 mb-2">
-            Auto-populated if you signed in with GitHub
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={githubToken}
-              onChange={(e) => setGithubToken(e.target.value)}
-              placeholder={credStatus.hasGithub ? "Enter new token to replace" : "ghp_..."}
-              className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-500"
-            />
-            <button
-              onClick={() => handleSave("github", githubToken)}
-              disabled={!githubToken.trim() || saving === "github"}
-              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
-            >
-              {saving === "github" ? "saving..." : "save"}
-            </button>
-          </div>
-          {saved === "github" && (
-            <span className="text-xs text-green-400 mt-1 inline-block">Saved</span>
-          )}
-        </div>
-
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-          <label className="block text-xs text-zinc-500 mb-1">
-            Anthropic API Key
-            {credStatus.hasAnthropic && (
-              <span className="text-green-500 ml-2">configured</span>
-            )}
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={anthropicKey}
-              onChange={(e) => setAnthropicKey(e.target.value)}
-              placeholder={credStatus.hasAnthropic ? "Enter new key to replace" : "sk-ant-..."}
-              className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-500"
-            />
-            <button
-              onClick={() => handleSave("anthropic", anthropicKey)}
-              disabled={!anthropicKey.trim() || saving === "anthropic"}
-              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
-            >
-              {saving === "anthropic" ? "saving..." : "save"}
-            </button>
-          </div>
-          {saved === "anthropic" && (
-            <span className="text-xs text-green-400 mt-1 inline-block">Saved</span>
+          {isLocalMode() ? (
+            <div>
+              <p className="text-xs text-zinc-600 mb-2">
+                Personal access token for private repo access.
+                {credStatus.hasGithub && (
+                  <span className="text-green-500 ml-2">configured</span>
+                )}
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={githubToken}
+                  onChange={(e) => setGithubToken(e.target.value)}
+                  placeholder={credStatus.hasGithub ? "Enter new token to replace" : "ghp_..."}
+                  className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-500"
+                />
+                <button
+                  onClick={handleSaveToken}
+                  disabled={!githubToken.trim() || saving}
+                  className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
+                >
+                  {saving ? "saving..." : "save"}
+                </button>
+              </div>
+              {saved && (
+                <span className="text-xs text-green-400 mt-1 inline-block">Saved</span>
+              )}
+            </div>
+          ) : credStatus.hasGithub ? (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-green-400">Connected via GitHub</span>
+              <button
+                onClick={connectGithub}
+                disabled={connecting}
+                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
+              >
+                {connecting ? "connecting..." : "reconnect"}
+              </button>
+            </div>
+          ) : (
+            <div>
+              <p className="text-xs text-zinc-600 mb-3">
+                Connect your GitHub account to let agents access your repositories.
+              </p>
+              <button
+                onClick={connectGithub}
+                disabled={connecting}
+                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
+              >
+                {connecting ? "connecting..." : "Connect GitHub"}
+              </button>
+            </div>
           )}
         </div>
       </div>

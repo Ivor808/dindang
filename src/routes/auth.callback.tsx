@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { createBrowserClient } from "@supabase/ssr";
+import { initSupabase, isLocalMode } from "~/lib/supabase-client";
+import { saveProviderToken } from "~/server/settings";
 
 export const Route = createFileRoute("/auth/callback")({
   component: AuthCallback,
@@ -10,15 +11,28 @@ function AuthCallback() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const supabase = createBrowserClient(
-      import.meta.env.VITE_SUPABASE_URL!,
-      import.meta.env.VITE_SUPABASE_ANON_KEY!,
-    );
+    if (isLocalMode()) {
+      navigate({ to: "/" });
+      return;
+    }
 
-    supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN") {
-        navigate({ to: "/" });
-      }
+    initSupabase().then((supabase) => {
+      if (!supabase) return;
+
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === "SIGNED_IN") {
+          if (session?.provider_token) {
+            try {
+              await saveProviderToken({
+                data: { provider: "github", token: session.provider_token },
+              });
+            } catch {
+              // Non-fatal — user can reconnect later from settings
+            }
+          }
+          navigate({ to: "/" });
+        }
+      });
     });
   }, [navigate]);
 

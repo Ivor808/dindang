@@ -7,8 +7,9 @@ import {
   useNavigate,
   useLocation,
 } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
-import { createBrowserClient } from "@supabase/ssr";
+import { useState, useEffect } from "react";
+import { initSupabase, isLocalMode } from "~/lib/supabase-client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
@@ -54,30 +55,30 @@ function RootError({ error }: { error: Error }) {
 }
 
 function RootLayout() {
-  const supabase = useMemo(
-    () =>
-      createBrowserClient(
-        import.meta.env.VITE_SUPABASE_URL!,
-        import.meta.env.VITE_SUPABASE_ANON_KEY!,
-      ),
-    [],
-  );
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(isLocalMode() ? {} : null);
+  const [loading, setLoading] = useState(!isLocalMode());
+  const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
+    if (isLocalMode()) return;
+
+    initSupabase().then((client) => {
+      if (!client) return;
+      setSupabase(client);
+
+      client.auth.getSession().then(({ data: { session } }) => {
+        setUser(session?.user ?? null);
+        setLoading(false);
+      });
+      const {
+        data: { subscription },
+      } = client.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null);
+      });
+      return () => subscription.unsubscribe();
     });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-    return () => subscription.unsubscribe();
   }, []);
 
   const isPublicRoute =
@@ -112,13 +113,17 @@ function RootLayout() {
                   >
                     settings
                   </Link>
-                  <span className="text-xs text-zinc-500">{user.email}</span>
-                  <button
-                    onClick={() => supabase.auth.signOut()}
-                    className="text-xs text-zinc-500 hover:text-zinc-300 cursor-pointer"
-                  >
-                    sign out
-                  </button>
+                  {!isLocalMode() && (
+                    <>
+                      <span className="text-xs text-zinc-500">{user.email}</span>
+                      <button
+                        onClick={() => supabase?.auth.signOut()}
+                        className="text-xs text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                      >
+                        sign out
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </nav>

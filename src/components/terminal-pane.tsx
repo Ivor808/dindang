@@ -104,14 +104,26 @@ export function TerminalPane({ agentName, sessionName, active }: TerminalPanePro
     };
   }, [agentName, sessionName]);
 
-  // Re-fit when tab becomes active (hidden tabs have 0 size)
+  // Re-fit when tab becomes active or page becomes visible.
+  // Double-rAF waits for both the style recalc and layout pass to complete.
   useEffect(() => {
-    if (active) {
-      // Small delay to let the DOM update before measuring
-      const id = requestAnimationFrame(() => fitRef.current?.fit());
-      return () => cancelAnimationFrame(id);
-    }
+    if (!active) return;
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => fitRef.current?.fit());
+    });
+    return () => cancelAnimationFrame(id);
   }, [active]);
+
+  // Re-fit when returning to the page (e.g., navigating back from dashboard)
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === "visible") {
+        requestAnimationFrame(() => fitRef.current?.fit());
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, []);
 
   return (
     <div

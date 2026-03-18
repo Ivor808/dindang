@@ -51,7 +51,7 @@ export const createProject = createServerFn({ method: "POST" })
 
 export const editProject = createServerFn({ method: "POST" })
   .inputValidator(
-    (data: { id: string; name?: string; repoUrl?: string; setupCommand?: string; aiCli?: "claude" | "codex" | "none"; devPort?: number; isDefault?: boolean }) => data,
+    (data: { id: string; name?: string; repoUrl?: string | null; setupCommand?: string | null; aiCli?: "claude" | "codex" | "none"; devPort?: number | null; isDefault?: boolean }) => data,
   )
   .handler(async ({ data }) => {
     const { userId, orgId } = await requireAuthWithOrg();

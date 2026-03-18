@@ -142,10 +142,10 @@ function ProjectsTab({
           data: {
             id: editingId,
             name: projectName.trim(),
-            repoUrl: repoUrl.trim() || undefined,
-            setupCommand: setupCmd.trim() || undefined,
+            repoUrl: repoUrl.trim() || null,
+            setupCommand: setupCmd.trim() || null,
             aiCli,
-            devPort: devPort ? parseInt(devPort, 10) : undefined,
+            devPort: devPort ? parseInt(devPort, 10) : null,
             isDefault,
           },
         });

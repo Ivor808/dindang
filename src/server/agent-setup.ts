@@ -64,7 +64,10 @@ export async function setupAgent(transport: Transport, options: AgentSetupOption
     const hasClaude = await transport.exec(asUser("which claude"));
     if (hasClaude.exitCode !== 0) {
       onProgress("Installing Claude Code...");
-      await transport.exec(asUser("curl -fsSL https://claude.ai/install.sh | bash"));
+      const claudeInstall = await transport.exec(asUser("curl -fsSL https://claude.ai/install.sh | bash"));
+      if (claudeInstall.exitCode !== 0) {
+        console.error(`[agent-setup] Claude Code install failed for ${options.name} (exit ${claudeInstall.exitCode}): ${claudeInstall.stderr}`);
+      }
     }
   } else if (options.aiCli === "codex") {
     const hasCodex = await transport.exec(asUser("which codex"));
@@ -129,7 +132,10 @@ export async function setupAgent(transport: Transport, options: AgentSetupOption
     onProgress(`Running setup: ${options.setupCommand}`);
     const setup = await transport.exec(asUser(`cd ${options.workDir} && ${options.setupCommand}`));
     if (setup.exitCode !== 0) {
-      throw new Error(`Setup command failed (exit ${setup.exitCode}): ${setup.stderr}`);
+      console.error(`[agent-setup] setup command failed for ${options.name} (exit ${setup.exitCode})`);
+      console.error(`[agent-setup] stdout: ${setup.stdout}`);
+      console.error(`[agent-setup] stderr: ${setup.stderr}`);
+      throw new Error(`Setup command failed (exit ${setup.exitCode}): ${setup.stderr || setup.stdout || '(no output)'}`);
     }
   }
 

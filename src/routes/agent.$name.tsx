@@ -41,7 +41,6 @@ function AgentDetail() {
   const [redeploying, setRedeploying] = useState(false);
   const [health, setHealth] = useState<AgentHealth | null>(null);
   const [showHealth, setShowHealth] = useState(false);
-  const [headerExpanded, setHeaderExpanded] = useState(false);
   const [dirtyConfirm, setDirtyConfirm] = useState<{ action: string; summary: string; onConfirm: () => void } | null>(null);
 
   // Fetch health when agent becomes ready
@@ -118,7 +117,7 @@ function AgentDetail() {
 
   return (
     <div className="px-3 pt-2 pb-1 flex flex-col h-[calc(100vh-49px)] overflow-hidden">
-      {/* Compact header — click to expand */}
+      {/* Header — single line with all actions */}
       <div className="flex items-center justify-between mb-1 shrink-0">
         <div className="flex items-center gap-3">
           <button
@@ -134,6 +133,14 @@ function AgentDetail() {
               {Math.floor((Date.now() - new Date(agent.busySince).getTime()) / 60000)}m
             </span>
           )}
+          {health && health.running && (
+            <button
+              onClick={() => setShowHealth(!showHealth)}
+              className={`text-xs cursor-pointer ${showHealth ? "text-zinc-300" : "text-zinc-600 hover:text-zinc-400"}`}
+            >
+              {health.user === "dev" && health.git && health.node ? "\u2713" : "\u2717"}
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {agent.previewUrl && (
@@ -141,28 +148,15 @@ function AgentDetail() {
               href={resolvePreviewUrl(agent.previewUrl)}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs transition-colors"
+              className="px-2 py-1 text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
             >
               preview
             </a>
           )}
-          <button
-            onClick={() => setHeaderExpanded(!headerExpanded)}
-            className="px-2 py-1 text-zinc-500 hover:text-zinc-300 text-xs cursor-pointer"
-            title={headerExpanded ? "Collapse" : "More actions"}
-          >
-            {headerExpanded ? "\u2715" : "\u2026"}
-          </button>
-        </div>
-      </div>
-
-      {/* Expanded actions */}
-      {headerExpanded && (
-        <div className="flex items-center gap-2 mb-1 shrink-0">
           {agent.status === "busy" && (
             <button
               onClick={handleStop}
-              className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs transition-colors cursor-pointer"
+              className="px-2 py-1 text-zinc-500 hover:text-zinc-300 text-xs transition-colors cursor-pointer"
             >
               stop
             </button>
@@ -170,26 +164,20 @@ function AgentDetail() {
           <button
             onClick={handleRedeploy}
             disabled={redeploying}
-            className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded text-xs transition-colors cursor-pointer"
+            className="px-2 py-1 text-zinc-500 hover:text-zinc-300 disabled:opacity-50 text-xs transition-colors cursor-pointer"
           >
             {redeploying ? "redeploying..." : "redeploy"}
           </button>
           <button
             onClick={handleRemove}
-            className="px-2 py-1 bg-red-950 hover:bg-red-900 text-red-300 rounded text-xs transition-colors cursor-pointer"
+            className="px-2 py-1 text-red-400/60 hover:text-red-300 text-xs transition-colors cursor-pointer"
           >
             remove
           </button>
-          {health && health.running && (
-            <button
-              onClick={() => setShowHealth(!showHealth)}
-              className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs transition-colors cursor-pointer"
-            >
-              health
-            </button>
-          )}
         </div>
-      )}
+      </div>
+
+      {showHealth && health && health.running && <HealthBadge health={health} showHealth={true} onToggle={() => setShowHealth(false)} />}
 
       {error && (
         <p className="text-red-400 text-xs mb-1">Error: {error}</p>
@@ -201,8 +189,6 @@ function AgentDetail() {
           <pre className="text-red-300 text-xs whitespace-pre-wrap break-words">{agent.errorMessage}</pre>
         </div>
       )}
-
-      {headerExpanded && showHealth && health && health.running && <HealthBadge health={health} showHealth={true} onToggle={() => setShowHealth(!showHealth)} />}
 
       {/* Terminal tabs */}
       <TerminalTabs agentName={name} disabled={agent.status === "provisioning"} />

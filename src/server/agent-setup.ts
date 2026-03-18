@@ -103,11 +103,29 @@ export async function setupAgent(transport: Transport, options: AgentSetupOption
 
   // Write Claude hooks config as dev user
   if (options.aiCli === "claude") {
+    // Claude Code blocks HTTP hooks to private IPs (except 127.0.0.1).
+    // Set up a socat port forward so 127.0.0.1:3000 inside the container
+    // reaches the dindang server via host.docker.internal.
+    const callbackHost = new URL(options.callbackUrl).hostname;
+    const callbackPort = new URL(options.callbackUrl).port || "3000";
+
+    // Install socat if not present
+    const hasSocat = await transport.exec(["which", "socat"]);
+    if (hasSocat.exitCode !== 0) {
+      await transport.exec(["bash", "-c", "apt-get update -qq && apt-get install -y -qq socat"]);
+    }
+
+    // Start socat forwarder in background (survives across tmux sessions)
+    await transport.exec(["bash", "-c",
+      `socat TCP-LISTEN:${callbackPort},bind=127.0.0.1,fork,reuseaddr TCP:${callbackHost}:${callbackPort} &`,
+    ]);
+
+    const localCallbackUrl = `http://127.0.0.1:${callbackPort}`;
     const hooksConfig = JSON.stringify({
       hooks: {
-        PreToolUse: [{ hooks: [{ type: "http", url: `${options.callbackUrl}/api/hooks/agent/${options.name}/PreToolUse` }] }],
-        PostToolUse: [{ hooks: [{ type: "http", url: `${options.callbackUrl}/api/hooks/agent/${options.name}/PostToolUse` }] }],
-        Stop: [{ hooks: [{ type: "http", url: `${options.callbackUrl}/api/hooks/agent/${options.name}/Stop` }] }],
+        PreToolUse: [{ hooks: [{ type: "http", url: `${localCallbackUrl}/api/hooks/agent/${options.name}/PreToolUse` }] }],
+        PostToolUse: [{ hooks: [{ type: "http", url: `${localCallbackUrl}/api/hooks/agent/${options.name}/PostToolUse` }] }],
+        Stop: [{ hooks: [{ type: "http", url: `${localCallbackUrl}/api/hooks/agent/${options.name}/Stop` }] }],
       },
     });
     await transport.exec(asUser(`mkdir -p ${options.workDir}/.claude`));

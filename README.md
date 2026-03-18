@@ -7,6 +7,8 @@
 
 Spawn agents that clone your repo, set up the project, and work independently on different tasks. Watch them all from a single dashboard with live terminals in the browser.
 
+## Quick Start
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Ivor808/dindang/master/install.sh | sh
 ```

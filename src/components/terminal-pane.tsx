@@ -60,6 +60,28 @@ export function TerminalPane({ agentName, sessionName, active }: TerminalPanePro
       term.write("\r\n\x1b[31m[connection error]\x1b[0m\r\n");
     };
 
+    // Handle copy/paste keyboard shortcuts before they reach the terminal
+    term.attachCustomKeyEventHandler((e) => {
+      const isMac = navigator.platform.startsWith("Mac");
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+
+      // Cmd+C / Ctrl+C: copy selection if present, otherwise send interrupt
+      if (mod && e.key === "c" && e.type === "keydown") {
+        if (term.hasSelection()) {
+          navigator.clipboard.writeText(term.getSelection());
+          return false; // prevent sending to terminal
+        }
+      }
+      // Cmd+V / Ctrl+V: paste from clipboard
+      if (mod && e.key === "v" && e.type === "keydown") {
+        navigator.clipboard.readText().then((text) => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(text);
+        });
+        return false;
+      }
+      return true;
+    });
+
     term.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(data);
     });

@@ -91,20 +91,10 @@ export function TerminalPane({ agentName, sessionName, active }: TerminalPanePro
       }
     });
 
-    // Trap wheel events inside the terminal so the page doesn't scroll.
-    // xterm.js handles scrollback on its own viewport element (a child).
-    // We catch the event after xterm processes it and stop it from reaching the page.
-    const el = containerRef.current;
-    const wheelHandler = (e: WheelEvent) => {
-      e.preventDefault();
-    };
-    el.addEventListener("wheel", wheelHandler, { passive: false });
-
     const observer = new ResizeObserver(() => fit.fit());
-    observer.observe(el);
+    observer.observe(containerRef.current);
 
     return () => {
-      el.removeEventListener("wheel", wheelHandler);
       observer.disconnect();
       ws.close();
       term.dispose();
@@ -126,7 +116,7 @@ export function TerminalPane({ agentName, sessionName, active }: TerminalPanePro
   return (
     <div
       ref={containerRef}
-      className="flex-1 min-h-0 min-w-0 p-1 overscroll-contain"
+      className="flex-1 min-h-0 min-w-0 p-1 overflow-hidden"
       onContextMenu={(e) => e.preventDefault()}
     />
   );

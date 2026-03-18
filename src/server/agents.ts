@@ -61,15 +61,15 @@ export const getAgent = createServerFn({ method: "GET" })
     const out = rowToAgent(agent);
 
     // Resolve preview URL based on machine type
-    if (agent.machineId && agent.hostPort) {
+    if (agent.machineId) {
       const machineRows = await db.select().from(machines).where(eq(machines.id, agent.machineId)).limit(1);
       const machine = machineRows[0];
       if (machine) {
         if (machine.type === "local") {
-          // Use hostPort directly — browser connects to host:port where dev server is at root
-          // The URL uses the browser's current hostname so it works for both localhost and remote access
-          out.previewUrl = `__PREVIEW_PORT__${agent.hostPort}`;
-        } else {
+          // Route through dindang's preview proxy so it works regardless of
+          // how the user accesses dindang (localhost, Tailscale, etc.)
+          out.previewUrl = `/preview/${agent.name}/`;
+        } else if (agent.hostPort) {
           out.previewUrl = `http://${machine.host}:${agent.hostPort}`;
         }
       }

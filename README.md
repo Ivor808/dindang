@@ -7,6 +7,12 @@
 
 Spawn agents that clone your repo, set up the project, and work independently on different tasks. Watch them all from a single dashboard with live terminals in the browser.
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/Ivor808/dindang/master/install.sh | sh
+```
+
+Open [http://localhost:3000](http://localhost:3000). Requires [Docker](https://docs.docker.com/get-docker/). Run the same command again to update.
+
 **Dashboard** — spin up agents, track status, manage projects and machines
 
 <img width="1271" alt="Dashboard — manage agents across projects and machines" src="https://github.com/user-attachments/assets/f7c8d792-831b-4175-8424-4a743593260c" />
@@ -18,16 +24,6 @@ Spawn agents that clone your repo, set up the project, and work independently on
 **Agent status** — see which agents are busy, idle, or errored at a glance
 
 <img width="544" alt="Agent card — busy status with timer" src="https://github.com/user-attachments/assets/27469688-40de-4082-b5dc-2f75486acee4" />
-
-## Quick Start
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Ivor808/dindang/master/install.sh | sh
-```
-
-Open [http://localhost:3000](http://localhost:3000). Requires [Docker](https://docs.docker.com/get-docker/).
-
-Run the same command again to update to the latest version.
 
 ## Features
 

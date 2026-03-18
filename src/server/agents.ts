@@ -260,7 +260,8 @@ export const checkAgentHealth = createServerFn({ method: "GET" })
       ]);
 
       const [whoami, gitCheck, curlCheck, nodeCheck] = checks;
-      const user = (whoami as ExecResult).exitCode === 0 ? (whoami as ExecResult).stdout.trim() : null;
+      const whoamiResult = whoami as ExecResult;
+      const user = whoamiResult.exitCode === 0 ? (whoamiResult.stdout.trim() || whoamiResult.stderr.trim() || null) : null;
       const git = (gitCheck as ExecResult).exitCode === 0;
       const curl = (curlCheck as ExecResult).exitCode === 0;
       const node = (nodeCheck as ExecResult).exitCode === 0;

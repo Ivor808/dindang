@@ -57,62 +57,18 @@ export async function reconcileOnStartup(): Promise<void> {
   }
 }
 
-/**
- * Graceful shutdown: stop all running agent containers.
- * Called on SIGTERM / SIGINT.
- */
-async function shutdownContainers(): Promise<void> {
-  console.log("[lifecycle] shutting down — stopping agent containers...");
-  try {
-    const allAgents = await db
-      .select({
-        name: agents.name,
-        remoteId: agents.remoteId,
-        machineId: agents.machineId,
-      })
-      .from(agents);
-
-    const results = await Promise.allSettled(
-      allAgents
-        .filter((a) => a.remoteId && a.machineId)
-        .map(async (agent) => {
-          const machineRows = await db
-            .select()
-            .from(machines)
-            .where(eq(machines.id, agent.machineId!))
-            .limit(1);
-          if (machineRows.length === 0) return;
-
-          const runtime = getRuntimeForMachine(machineRows[0]!);
-          const running = await runtime.isRunning(agent.remoteId!);
-          if (running) {
-            console.log(`[lifecycle] stopping ${agent.name}`);
-            await runtime.stop(agent.remoteId!);
-          }
-        }),
-    );
-
-    const stopped = results.filter((r) => r.status === "fulfilled").length;
-    const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
-    for (const f of failed) {
-      console.error("[lifecycle] failed to stop agent:", f.reason);
-    }
-    console.log(`[lifecycle] shutdown complete — processed ${stopped}/${allAgents.length} agents`);
-  } catch (e) {
-    console.error("[lifecycle] shutdown error:", e);
-  }
-}
-
 let registered = false;
 
-/** Register process signal handlers for graceful shutdown. Idempotent. */
+/** Register process signal handlers for graceful shutdown. Idempotent.
+ *  Agent containers are left running — they're independent and survive
+ *  dindang restarts (e.g., during updates via docker compose pull). */
 export function registerShutdownHandlers(): void {
   if (registered) return;
   registered = true;
 
   const handler = (signal: string) => {
-    console.log(`[lifecycle] received ${signal}`);
-    shutdownContainers().finally(() => process.exit(0));
+    console.log(`[lifecycle] received ${signal} — exiting (agent containers left running)`);
+    process.exit(0);
   };
 
   process.on("SIGTERM", () => handler("SIGTERM"));

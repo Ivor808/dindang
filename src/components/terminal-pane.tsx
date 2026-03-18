@@ -91,10 +91,20 @@ export function TerminalPane({ agentName, sessionName, active }: TerminalPanePro
       }
     });
 
+    // Intercept wheel events to scroll the xterm buffer instead of sending
+    // arrow keys when tmux is in alternate screen mode
+    const wheelHandler = (e: WheelEvent) => {
+      e.preventDefault();
+      const lines = Math.round(e.deltaY / 25) || (e.deltaY > 0 ? 1 : -1);
+      term.scrollLines(lines);
+    };
+    containerRef.current.addEventListener("wheel", wheelHandler, { passive: false });
+
     const observer = new ResizeObserver(() => fit.fit());
     observer.observe(containerRef.current);
 
     return () => {
+      containerRef.current?.removeEventListener("wheel", wheelHandler);
       observer.disconnect();
       ws.close();
       term.dispose();

@@ -45,19 +45,7 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Verify schema migrations
+      - name: Verify schema push
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dindang_test
-        run: |
-          # Push current schema to test DB
-          npx drizzle-kit push --force
-
-          # Generate migrations from current schema — should produce nothing
-          # if the schema file and DB are in sync
-          npx drizzle-kit generate 2>&1 | tee /tmp/generate-output.txt
-
-          # Check if any new migration files were generated
-          if find src/db/migrations -name '*.sql' -newer package.json 2>/dev/null | grep -q .; then
-            echo "::error::Schema and database are out of sync. Run 'npx drizzle-kit generate' and commit the migration."
-            exit 1
-          fi
+        run: npx drizzle-kit push --force

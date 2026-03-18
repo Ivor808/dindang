@@ -32,6 +32,63 @@ export function TerminalTabs({ agentName, disabled }: TerminalTabsProps) {
 
   const activeTab = layout.tabs.find((t) => t.id === layout.activeTabId) ?? layout.tabs[0]!;
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't intercept when typing in an input (e.g., tab rename)
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      const isMac = navigator.platform.startsWith("Mac");
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (!mod) return;
+
+      // Cmd/Ctrl+T — new tab
+      if (e.key === "t") {
+        e.preventDefault();
+        addTab();
+        return;
+      }
+      // Cmd/Ctrl+W — close current tab
+      if (e.key === "w") {
+        e.preventDefault();
+        if (layout.tabs.length > 1) closeTab(layout.activeTabId);
+        return;
+      }
+      // Cmd/Ctrl+\ — toggle split
+      if (e.key === "\\") {
+        e.preventDefault();
+        toggleSplit();
+        return;
+      }
+      // Cmd/Ctrl+1-9 — switch to tab by number
+      if (e.key >= "1" && e.key <= "9") {
+        e.preventDefault();
+        const idx = parseInt(e.key) - 1;
+        if (idx < layout.tabs.length) {
+          updateLayout((prev) => ({ ...prev, activeTabId: prev.tabs[idx]!.id }));
+        }
+        return;
+      }
+      // Cmd/Ctrl+Shift+[ or ] — previous/next tab
+      if (e.shiftKey && (e.key === "[" || e.key === "{")) {
+        e.preventDefault();
+        const idx = layout.tabs.findIndex((t) => t.id === layout.activeTabId);
+        const prev = (idx - 1 + layout.tabs.length) % layout.tabs.length;
+        updateLayout((p) => ({ ...p, activeTabId: p.tabs[prev]!.id }));
+        return;
+      }
+      if (e.shiftKey && (e.key === "]" || e.key === "}")) {
+        e.preventDefault();
+        const idx = layout.tabs.findIndex((t) => t.id === layout.activeTabId);
+        const next = (idx + 1) % layout.tabs.length;
+        updateLayout((p) => ({ ...p, activeTabId: p.tabs[next]!.id }));
+        return;
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [layout.activeTabId, layout.tabs.length]);
+
   const updateLayout = useCallback((fn: (prev: AgentTerminalLayout) => AgentTerminalLayout) => {
     setLayout((prev) => fn(prev));
   }, []);

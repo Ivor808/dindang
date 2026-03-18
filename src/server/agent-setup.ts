@@ -123,6 +123,7 @@ export async function setupAgent(transport: Transport, options: AgentSetupOption
     "set -g aggressive-resize on",   // resize window to current client, not smallest
     "set -g status off",             // hide status bar (dindang has its own UI chrome)
     "set -g history-limit 50000",    // generous scrollback
+    "set -g mouse on",              // let tmux handle mouse scroll instead of sending arrow keys
   ].join("\n") + "\n";
   await transport.writeFile("/home/dev/.tmux.conf", tmuxConf);
   await transport.exec(["chown", "dev:dev", "/home/dev/.tmux.conf"]);

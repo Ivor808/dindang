@@ -34,6 +34,8 @@ export function TerminalPane({ agentName, sessionName, active }: TerminalPanePro
         selectionBackground: "#3f3f46",
       },
       allowProposedApi: true,
+      scrollback: 10000,
+      altClickMovesCursor: false,
     });
 
     const fit = new FitAddon();
@@ -92,7 +94,7 @@ export function TerminalPane({ agentName, sessionName, active }: TerminalPanePro
   return (
     <div
       ref={containerRef}
-      className="flex-1 min-h-0 min-w-0 p-1"
+      className="flex-1 min-h-0 min-w-0 p-1 overscroll-contain"
       onMouseDown={() => termRef.current?.focus()}
     />
   );

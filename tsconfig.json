@@ -6,8 +6,10 @@
     "target": "ES2022",
     "strict": true,
     "skipLibCheck": true,
+    "noEmit": true,
     "paths": {
       "~/*": ["./src/*"]
     }
-  }
+  },
+  "exclude": ["server.ts", "dist"]
 }

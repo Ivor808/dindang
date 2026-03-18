@@ -294,9 +294,10 @@ export const loadSettings = createServerFn({ method: "GET" }).handler(async () =
       id: p.id,
       orgId: p.orgId,
       name: p.name,
-      repoUrl: p.repoUrl ?? "",
-      setupCommand: p.setupCommand ?? undefined,
-      devPort: p.devPort ?? undefined,
+      repoUrl: p.repoUrl,
+      setupCommand: p.setupCommand,
+      aiCli: p.aiCli,
+      devPort: p.devPort,
       isDefault: p.isDefault,
     })),
   };

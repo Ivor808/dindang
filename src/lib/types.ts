@@ -26,14 +26,14 @@ export interface Machine {
   orgId: string;
   name: string;
   type: MachineType;
-  host?: string;
-  port?: number;
-  username?: string;
-  authMethod?: "key" | "password";
-  hostKeyFingerprint?: string;
+  host: string;
+  port: number;
+  username?: string | null;
+  authMethod?: "key" | "password" | null;
+  hostKeyFingerprint?: string | null;
   enabled: boolean;
   status: MachineStatus;
-  createdAt: string;
+  createdAt: string | Date;
 }
 
 export type AiCli = "claude" | "codex" | "none";
@@ -42,9 +42,10 @@ export interface Project {
   id: string;
   orgId: string;
   name: string;
-  repoUrl: string;
-  setupCommand?: string;
+  repoUrl?: string | null;
+  setupCommand?: string | null;
   aiCli: AiCli;
-  devPort?: number;
+  devPort?: number | null;
   isDefault: boolean;
+  createdAt?: string | Date;
 }

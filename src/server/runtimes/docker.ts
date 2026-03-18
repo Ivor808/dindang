@@ -154,7 +154,7 @@ export class DockerAgentRuntime implements AgentRuntime {
       if (NETWORK && info.NetworkSettings?.Networks?.[NETWORK]) {
         return info.NetworkSettings.Networks[NETWORK].IPAddress || undefined;
       }
-      return info.NetworkSettings?.IPAddress || undefined;
+      return (info.NetworkSettings as Record<string, any>)?.IPAddress || undefined;
     } catch { return undefined; }
   }
 

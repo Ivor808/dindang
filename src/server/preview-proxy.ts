@@ -112,8 +112,22 @@ async function handleProxy(agentName: string, subPath: string, req: IncomingMess
 
   proxyReq.on("error", (err) => {
     if (!res.headersSent) {
-      res.writeHead(502, { "Content-Type": "text/plain" });
-      res.end(`Could not connect to agent dev server: ${err.message}`);
+      const isRefused = err.message.includes("ECONNREFUSED");
+      res.writeHead(502, { "Content-Type": "text/html" });
+      res.end(
+        `<html><body style="font-family:monospace;background:#09090b;color:#a1a1aa;padding:2rem;max-width:40rem">` +
+        `<h2 style="color:#f87171;font-size:1rem">Could not connect to dev server</h2>` +
+        `<p style="font-size:0.85rem;color:#71717a">${err.message}</p>` +
+        (isRefused
+          ? `<p style="font-size:0.85rem;margin-top:1rem">Common causes:</p>` +
+            `<ul style="font-size:0.85rem;color:#71717a;padding-left:1.5rem">` +
+            `<li>Dev server isn't running yet — start it in the terminal</li>` +
+            `<li>Dev server is listening on localhost only — add <code style="color:#d4d4d8">--host 0.0.0.0</code> to your dev command</li>` +
+            `<li>Port mismatch — check that the dev port in project settings matches your server</li>` +
+            `</ul>`
+          : "") +
+        `</body></html>`
+      );
     }
   });
 

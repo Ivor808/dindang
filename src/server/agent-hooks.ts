@@ -14,6 +14,8 @@ export function agentHooksMiddleware(req: IncomingMessage, res: ServerResponse, 
   const agentName = match[1]!;
   const event = match[2] as string | undefined;
 
+  console.log(`[hooks] ${req.method} ${req.url} — agent=${agentName} event=${event}`);
+
   // Respond immediately — don't block Claude Code waiting for our DB write
   req.on("data", () => {}); // drain request body
   req.on("end", () => {

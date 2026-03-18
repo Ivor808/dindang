@@ -45,6 +45,7 @@ export class DockerAgentRuntime implements AgentRuntime {
         Binds: [`${volumeName}:/home`, "/var/run/docker.sock:/var/run/docker.sock"],
         NetworkMode: NETWORK || undefined,
         PortBindings: portBindings,
+        ExtraHosts: ["host.docker.internal:host-gateway"],
       },
     });
     await container.start();
@@ -91,6 +92,7 @@ export class DockerAgentRuntime implements AgentRuntime {
         Binds: [`${volumeName}:/home`, "/var/run/docker.sock:/var/run/docker.sock"],
         NetworkMode: NETWORK || undefined,
         PortBindings: portBindings,
+        ExtraHosts: ["host.docker.internal:host-gateway"],
       },
     });
     await container.start();

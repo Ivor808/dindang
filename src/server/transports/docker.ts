@@ -14,17 +14,25 @@ export class DockerTransport implements Transport {
     });
 
     const stream = await exec.start({ hijack: true, stdin: false });
-    const chunks: Buffer[] = [];
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
 
     return new Promise((resolve) => {
-      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      // Docker multiplexes stdout/stderr with 8-byte headers when Tty is false.
+      // Demux into separate streams to get clean output.
+      const stdout = new (require("stream").PassThrough)();
+      const stderr = new (require("stream").PassThrough)();
+      this.container.modem.demuxStream(stream, stdout, stderr);
+
+      stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+      stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+
       stream.on("end", async () => {
-        const output = Buffer.concat(chunks).toString();
         const info = await exec.inspect();
         resolve({
           exitCode: info.ExitCode ?? 1,
-          stdout: output,
-          stderr: "",
+          stdout: Buffer.concat(stdoutChunks).toString(),
+          stderr: Buffer.concat(stderrChunks).toString(),
         });
       });
     });

@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { getAgent, stopAgent, removeAgent, redeployAgent, checkAgentHealth } from "~/server/agents";
+import { getAgent, stopAgent, removeAgent, redeployAgent, checkAgentHealth, checkDirtyState } from "~/server/agents";
 import type { AgentHealth } from "~/server/agents";
 import { StatusBadge } from "~/components/status-badge";
 import { TerminalTabs } from "~/components/terminal-tabs";
@@ -74,7 +74,20 @@ function AgentDetail() {
     }
   };
 
+  const confirmIfDirty = async (action: string): Promise<boolean> => {
+    try {
+      const { dirty, summary } = await checkDirtyState({ data: name });
+      if (dirty) {
+        return window.confirm(`This agent has ${summary}. Are you sure you want to ${action}? Uncommitted changes will be lost.`);
+      }
+    } catch {
+      // Can't check — proceed without warning
+    }
+    return true;
+  };
+
   const handleRedeploy = async () => {
+    if (!(await confirmIfDirty("redeploy"))) return;
     setRedeploying(true);
     setError(null);
     try {
@@ -88,6 +101,7 @@ function AgentDetail() {
   };
 
   const handleRemove = async () => {
+    if (!(await confirmIfDirty("remove this agent"))) return;
     try {
       await removeAgent({ data: name });
       navigate({ to: "/" });

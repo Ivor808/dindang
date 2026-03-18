@@ -1,6 +1,6 @@
 import { createFileRoute, useRouter, Link } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
-import { listAgents, createAgent, removeAgent, redeployAgent, renameAgent, setAgentColor } from "~/server/agents";
+import { listAgents, createAgent, removeAgent, redeployAgent, renameAgent, setAgentColor, checkDirtyState } from "~/server/agents";
 import { listProjects, listMachinesApi } from "~/server/settings";
 import { AgentCard } from "~/components/agent-card";
 import { toErrorMessage } from "~/lib/errors";
@@ -134,6 +134,8 @@ function Dashboard() {
               aiCli={projectCliMap.get(agent.projectId)}
               onRemove={async () => {
                 try {
+                  const { dirty, summary } = await checkDirtyState({ data: agent.name }).catch(() => ({ dirty: false, summary: "" }));
+                  if (dirty && !window.confirm(`This agent has ${summary}. Remove anyway? Uncommitted changes will be lost.`)) return;
                   await removeAgent({ data: agent.name });
                   await router.invalidate();
                 } catch (e) {
@@ -142,6 +144,8 @@ function Dashboard() {
               }}
               onRedeploy={async () => {
                 try {
+                  const { dirty, summary } = await checkDirtyState({ data: agent.name }).catch(() => ({ dirty: false, summary: "" }));
+                  if (dirty && !window.confirm(`This agent has ${summary}. Redeploy anyway? Uncommitted changes will be lost.`)) return;
                   await redeployAgent({ data: agent.name });
                   await router.invalidate();
                 } catch (e) {

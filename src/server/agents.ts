@@ -280,6 +280,40 @@ export const checkAgentHealth = createServerFn({ method: "GET" })
     }
   });
 
+export const checkDirtyState = createServerFn({ method: "GET" })
+  .inputValidator((name: string) => name)
+  .handler(async ({ data: name }): Promise<{ dirty: boolean; summary: string }> => {
+    const { orgId } = await requireAuthWithOrg();
+    const result = await db
+      .select()
+      .from(agents)
+      .where(and(eq(agents.name, name), eq(agents.orgId, orgId)))
+      .limit(1);
+    if (result.length === 0) throw new Error("Agent not found");
+    const agent = result[0]!;
+
+    if (!agent.remoteId || !agent.machineId || !agent.workDir)
+      return { dirty: false, summary: "" };
+
+    const machine = await getMachine(agent.machineId, orgId);
+    const runtime = getRuntimeForMachine(machine);
+    const running = await runtime.isRunning(agent.remoteId);
+    if (!running) return { dirty: false, summary: "" };
+
+    const transport = await runtime.getTransport(agent.remoteId);
+    try {
+      const status = await transport.exec(asUser(`cd ${agent.workDir} && git status --porcelain 2>/dev/null`));
+      if (status.exitCode !== 0 || !status.stdout.trim()) {
+        return { dirty: false, summary: "" };
+      }
+      const lines = status.stdout.trim().split("\n").filter(Boolean);
+      const summary = `${lines.length} uncommitted change${lines.length === 1 ? "" : "s"}`;
+      return { dirty: true, summary };
+    } finally {
+      await transport.destroy();
+    }
+  });
+
 export const redeployAgent = createServerFn({ method: "POST" })
   .inputValidator((name: string) => name)
   .handler(async ({ data: name }) => {

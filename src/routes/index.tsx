@@ -1,8 +1,9 @@
 import { createFileRoute, useRouter, Link } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { listAgents, createAgent, removeAgent, redeployAgent, renameAgent, setAgentColor, checkDirtyState } from "~/server/agents";
 import { listProjects, listMachinesApi } from "~/server/settings";
 import { AgentCard } from "~/components/agent-card";
+import { ConfirmModal } from "~/components/confirm-modal";
 import { toErrorMessage } from "~/lib/errors";
 import type { Project, Machine } from "~/lib/types";
 
@@ -23,6 +24,20 @@ function Dashboard() {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dirtyConfirm, setDirtyConfirm] = useState<{ action: string; summary: string; onConfirm: () => void } | null>(null);
+
+  const withDirtyCheck = useCallback(async (agentName: string, action: string, onConfirm: () => void) => {
+    try {
+      const { dirty, summary } = await checkDirtyState({ data: agentName });
+      if (dirty) {
+        setDirtyConfirm({ action, summary, onConfirm });
+        return;
+      }
+    } catch {
+      // Can't check — proceed
+    }
+    onConfirm();
+  }, []);
   const [selectedProject, setSelectedProject] = useState<string>(
     () => projects.find((p: Project) => p.isDefault)?.id ?? projects[0]?.id ?? "",
   );
@@ -132,25 +147,25 @@ function Dashboard() {
               agent={agent}
               projectName={projectMap.get(agent.projectId)}
               aiCli={projectCliMap.get(agent.projectId)}
-              onRemove={async () => {
-                try {
-                  const { dirty, summary } = await checkDirtyState({ data: agent.name }).catch(() => ({ dirty: false, summary: "" }));
-                  if (dirty && !window.confirm(`This agent has ${summary}. Remove anyway? Uncommitted changes will be lost.`)) return;
-                  await removeAgent({ data: agent.name });
-                  await router.invalidate();
-                } catch (e) {
-                  setError(toErrorMessage(e));
-                }
+              onRemove={() => {
+                withDirtyCheck(agent.name, "remove", async () => {
+                  try {
+                    await removeAgent({ data: agent.name });
+                    await router.invalidate();
+                  } catch (e) {
+                    setError(toErrorMessage(e));
+                  }
+                });
               }}
-              onRedeploy={async () => {
-                try {
-                  const { dirty, summary } = await checkDirtyState({ data: agent.name }).catch(() => ({ dirty: false, summary: "" }));
-                  if (dirty && !window.confirm(`This agent has ${summary}. Redeploy anyway? Uncommitted changes will be lost.`)) return;
-                  await redeployAgent({ data: agent.name });
-                  await router.invalidate();
-                } catch (e) {
-                  setError(toErrorMessage(e));
-                }
+              onRedeploy={() => {
+                withDirtyCheck(agent.name, "redeploy", async () => {
+                  try {
+                    await redeployAgent({ data: agent.name });
+                    await router.invalidate();
+                  } catch (e) {
+                    setError(toErrorMessage(e));
+                  }
+                });
               }}
               onRename={async (newName) => {
                 try {
@@ -171,6 +186,16 @@ function Dashboard() {
             />
           ))}
         </div>
+      )}
+
+      {dirtyConfirm && (
+        <ConfirmModal
+          title="Uncommitted changes"
+          message={`This agent has ${dirtyConfirm.summary}. Are you sure you want to ${dirtyConfirm.action}? Uncommitted changes will be lost.`}
+          confirmLabel={dirtyConfirm.action.charAt(0).toUpperCase() + dirtyConfirm.action.slice(1)}
+          onConfirm={() => { setDirtyConfirm(null); dirtyConfirm.onConfirm(); }}
+          onCancel={() => setDirtyConfirm(null)}
+        />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getAgent, stopAgent, removeAgent, redeployAgent, checkAgentHealth, checkDirtyState } from "~/server/agents";
+import { ConfirmModal } from "~/components/confirm-modal";
 import type { AgentHealth } from "~/server/agents";
 import { StatusBadge } from "~/components/status-badge";
 import { TerminalTabs } from "~/components/terminal-tabs";
@@ -40,6 +41,7 @@ function AgentDetail() {
   const [redeploying, setRedeploying] = useState(false);
   const [health, setHealth] = useState<AgentHealth | null>(null);
   const [showHealth, setShowHealth] = useState(false);
+  const [dirtyConfirm, setDirtyConfirm] = useState<{ action: string; summary: string; onConfirm: () => void } | null>(null);
 
   // Fetch health when agent becomes ready
   useEffect(() => {
@@ -74,40 +76,43 @@ function AgentDetail() {
     }
   };
 
-  const confirmIfDirty = async (action: string): Promise<boolean> => {
+  const withDirtyCheck = useCallback(async (action: string, onConfirm: () => void) => {
     try {
       const { dirty, summary } = await checkDirtyState({ data: name });
       if (dirty) {
-        return window.confirm(`This agent has ${summary}. Are you sure you want to ${action}? Uncommitted changes will be lost.`);
+        setDirtyConfirm({ action, summary, onConfirm });
+        return;
       }
     } catch {
       // Can't check — proceed without warning
     }
-    return true;
-  };
+    onConfirm();
+  }, [name]);
 
   const handleRedeploy = async () => {
-    if (!(await confirmIfDirty("redeploy"))) return;
-    setRedeploying(true);
-    setError(null);
-    try {
-      const updated = await redeployAgent({ data: name });
-      setAgent(updated);
-    } catch (e) {
-      setError(toErrorMessage(e));
-    } finally {
-      setRedeploying(false);
-    }
+    withDirtyCheck("redeploy", async () => {
+      setRedeploying(true);
+      setError(null);
+      try {
+        const updated = await redeployAgent({ data: name });
+        setAgent(updated);
+      } catch (e) {
+        setError(toErrorMessage(e));
+      } finally {
+        setRedeploying(false);
+      }
+    });
   };
 
   const handleRemove = async () => {
-    if (!(await confirmIfDirty("remove this agent"))) return;
-    try {
-      await removeAgent({ data: name });
-      navigate({ to: "/" });
-    } catch (e) {
-      setError(toErrorMessage(e));
-    }
+    withDirtyCheck("remove", async () => {
+      try {
+        await removeAgent({ data: name });
+        navigate({ to: "/" });
+      } catch (e) {
+        setError(toErrorMessage(e));
+      }
+    });
   };
 
   return (
@@ -185,6 +190,16 @@ function AgentDetail() {
             Redeploying container...
           </div>
         </div>
+      )}
+
+      {dirtyConfirm && (
+        <ConfirmModal
+          title="Uncommitted changes"
+          message={`This agent has ${dirtyConfirm.summary}. Are you sure you want to ${dirtyConfirm.action}? Uncommitted changes will be lost.`}
+          confirmLabel={dirtyConfirm.action.charAt(0).toUpperCase() + dirtyConfirm.action.slice(1)}
+          onConfirm={() => { setDirtyConfirm(null); dirtyConfirm.onConfirm(); }}
+          onCancel={() => setDirtyConfirm(null)}
+        />
       )}
     </div>
   );

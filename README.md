@@ -9,6 +9,8 @@ Spawn agents that clone your repo, set up the project, and work independently on
 
 <img width="1271" height="570" alt="image" src="https://github.com/user-attachments/assets/f7c8d792-831b-4175-8424-4a743593260c" />
 
+<img width="1509" height="499" alt="Screenshot 2026-03-17 at 11 35 07 PM" src="https://github.com/user-attachments/assets/27f9bc31-9d72-4aae-b004-b35a1f0e35f4" />
+
 <img width="544" height="228" alt="image" src="https://github.com/user-attachments/assets/27469688-40de-4082-b5dc-2f75486acee4" />
 
 ## Quick Start

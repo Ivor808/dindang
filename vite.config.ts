@@ -1,4 +1,5 @@
 import path from "path";
+import { execSync } from "child_process";
 import { defineConfig, loadEnv } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
@@ -66,6 +67,9 @@ export default defineConfig(({ mode }) => {
     "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(env.VITE_SUPABASE_URL),
     "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify(env.VITE_SUPABASE_ANON_KEY),
     "import.meta.env.VITE_DINDANG_MODE": JSON.stringify(env.DINDANG_MODE || "local"),
+    "import.meta.env.VITE_DINDANG_VERSION": JSON.stringify(
+      process.env.DINDANG_VERSION || (() => { try { return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim(); } catch { return "dev"; } })()
+    ),
   },
   resolve: {
     alias: {

@@ -11,6 +11,8 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 
 COPY . .
+ARG DINDANG_VERSION=dev
+ENV DINDANG_VERSION=$DINDANG_VERSION
 RUN npm run build
 
 # Prune devDeps, reinstall runtime tools

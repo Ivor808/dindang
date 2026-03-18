@@ -1,4 +1,5 @@
 import Docker from "dockerode";
+import { PassThrough } from "stream";
 import type { Transport, ExecResult, PTYOptions, PTYSession } from "~/lib/transport";
 
 export class DockerTransport implements Transport {
@@ -20,8 +21,8 @@ export class DockerTransport implements Transport {
     return new Promise((resolve) => {
       // Docker multiplexes stdout/stderr with 8-byte headers when Tty is false.
       // Demux into separate streams to get clean output.
-      const stdout = new (require("stream").PassThrough)();
-      const stderr = new (require("stream").PassThrough)();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
       this.container.modem.demuxStream(stream, stdout, stderr);
 
       stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));

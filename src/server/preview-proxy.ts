@@ -93,6 +93,8 @@ async function handleProxy(agentName: string, subPath: string, req: IncomingMess
     port = agent.hostPort;
   }
 
+  const basePath = `/preview/${agentName}`;
+
   const proxyReq = httpRequest(
     {
       hostname,
@@ -105,8 +107,72 @@ async function handleProxy(agentName: string, subPath: string, req: IncomingMess
       },
     },
     (proxyRes) => {
-      res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
-      proxyRes.pipe(res);
+      const statusCode = proxyRes.statusCode ?? 502;
+      const headers = { ...proxyRes.headers };
+
+      // Rewrite Location headers on redirects
+      if (headers.location && (statusCode >= 300 && statusCode < 400)) {
+        const loc = headers.location as string;
+        if (loc.startsWith("/") && !loc.startsWith(basePath)) {
+          headers.location = `${basePath}${loc}`;
+        }
+      }
+
+      const contentType = (headers["content-type"] ?? "") as string;
+      const isHtml = contentType.includes("text/html");
+
+      if (isHtml) {
+        // Buffer HTML responses to inject URL rewriting script
+        const chunks: Buffer[] = [];
+        proxyRes.on("data", (chunk: Buffer) => chunks.push(chunk));
+        proxyRes.on("end", () => {
+          let html = Buffer.concat(chunks).toString();
+
+          // Inject a script that rewrites absolute paths to go through the proxy
+          const rewriteScript = `<script>(function(){` +
+            `var b="${basePath}";` +
+            // Intercept clicks on links
+            `document.addEventListener("click",function(e){` +
+            `var a=e.target.closest("a");` +
+            `if(a&&a.href){` +
+            `var u=new URL(a.href);` +
+            `if(u.origin===location.origin&&u.pathname.indexOf(b)!==0&&u.pathname!=="/"){` +
+            `e.preventDefault();location.href=b+u.pathname+u.search+u.hash;` +
+            `}}});` +
+            // Patch history.pushState and replaceState
+            `var ps=history.pushState.bind(history),rs=history.replaceState.bind(history);` +
+            `function rw(u){` +
+            `if(typeof u==="string"&&u.startsWith("/")&&u.indexOf(b)!==0)return b+u;` +
+            `return u;}` +
+            `history.pushState=function(s,t,u){return ps(s,t,rw(u));};` +
+            `history.replaceState=function(s,t,u){return rs(s,t,rw(u));};` +
+            // Intercept fetch/XHR to rewrite API paths
+            `var of=window.fetch;window.fetch=function(u,o){` +
+            `if(typeof u==="string"&&u.startsWith("/")&&u.indexOf(b)!==0)u=b+u;` +
+            `return of.call(this,u,o);};` +
+            `})()</script>`;
+
+          // Inject before </head> or at start of <body>
+          if (html.includes("</head>")) {
+            html = html.replace("</head>", rewriteScript + "</head>");
+          } else if (html.includes("<body")) {
+            html = html.replace(/<body([^>]*)>/, `<body$1>${rewriteScript}`);
+          } else {
+            html = rewriteScript + html;
+          }
+
+          // Rewrite src/href attributes pointing to absolute paths
+          html = html.replace(/((?:src|href|action)\s*=\s*["'])\/(?!\/|preview\/)/g, `$1${basePath}/`);
+
+          delete headers["content-length"];
+          delete headers["content-encoding"]; // we decoded it
+          res.writeHead(statusCode, headers);
+          res.end(html);
+        });
+      } else {
+        res.writeHead(statusCode, headers);
+        proxyRes.pipe(res);
+      }
     },
   );
 

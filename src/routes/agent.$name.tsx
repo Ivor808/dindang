@@ -116,7 +116,7 @@ function AgentDetail() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-6 flex flex-col h-screen">
+    <div className="max-w-5xl mx-auto p-6 flex flex-col h-[calc(100vh-49px)] overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">

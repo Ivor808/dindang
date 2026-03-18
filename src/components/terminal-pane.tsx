@@ -95,6 +95,7 @@ export function TerminalPane({ agentName, sessionName, active }: TerminalPanePro
     <div
       ref={containerRef}
       className="flex-1 min-h-0 min-w-0 p-1 overscroll-contain"
+      onContextMenu={(e) => e.preventDefault()}
     />
   );
 }

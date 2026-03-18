@@ -15,9 +15,9 @@ services:
     restart: unless-stopped
 
   dindang:
-    # Pre-built image (uncomment after first push to ghcr.io):
-    # image: ghcr.io/ivor808/dindang:latest
-    build: .
+    image: ghcr.io/ivor808/dindang:master
+    # To build from source instead: comment out 'image' and uncomment 'build'
+    # build: .
     ports:
       - "3000:3000"
     environment:

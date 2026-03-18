@@ -133,12 +133,17 @@ function AgentDetail() {
               {Math.floor((Date.now() - new Date(agent.busySince).getTime()) / 60000)}m
             </span>
           )}
-          {health && health.running && (
+          {health && (
             <button
               onClick={() => setShowHealth(!showHealth)}
-              className={`text-xs cursor-pointer ${showHealth ? "text-zinc-300" : "text-zinc-600 hover:text-zinc-400"}`}
+              className={`text-xs cursor-pointer ${
+                !health.running ? "text-zinc-600 hover:text-zinc-400"
+                : health.user === "dev" && health.git && health.node
+                  ? "text-green-500 hover:text-green-400"
+                  : "text-red-400 hover:text-red-300"
+              }`}
             >
-              {health.user === "dev" && health.git && health.node ? "\u2713" : "\u2717"}
+              {!health.running ? "\u25cb" : health.user === "dev" && health.git && health.node ? "\u2713" : "\u2717"}
             </button>
           )}
         </div>
@@ -177,7 +182,7 @@ function AgentDetail() {
         </div>
       </div>
 
-      {showHealth && health && health.running && <HealthBadge health={health} showHealth={true} onToggle={() => setShowHealth(false)} />}
+      {showHealth && health && <HealthBadge health={health} showHealth={true} onToggle={() => setShowHealth(false)} />}
 
       {error && (
         <p className="text-red-400 text-xs mb-1">Error: {error}</p>

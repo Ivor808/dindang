@@ -6,6 +6,7 @@ import {
   timestamp,
   integer,
   unique,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const orgs = pgTable("orgs", {
@@ -46,7 +47,7 @@ export const machines = pgTable("machines", {
     .default("unknown")
     .notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [index("machines_org_id_idx").on(t.orgId)]);
 
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -60,15 +61,15 @@ export const projects = pgTable("projects", {
   devPort: integer("dev_port"),
   isDefault: boolean("is_default").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [index("projects_org_id_idx").on(t.orgId)]);
 
 export const agents = pgTable("agents", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: uuid("org_id")
     .notNull()
     .references(() => orgs.id, { onDelete: "cascade" }),
-  projectId: uuid("project_id").references(() => projects.id),
-  machineId: uuid("machine_id").references(() => machines.id),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  machineId: uuid("machine_id").references(() => machines.id, { onDelete: "set null" }),
   createdBy: uuid("created_by"),
   name: text("name").notNull(),
   remoteId: text("remote_id"),
@@ -81,7 +82,10 @@ export const agents = pgTable("agents", {
   busySince: timestamp("busy_since", { withTimezone: true }),
   hostPort: integer("host_port"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [
+  index("agents_org_id_idx").on(t.orgId),
+  index("agents_created_by_idx").on(t.createdBy),
+]);
 
 export const userCredentials = pgTable(
   "user_credentials",

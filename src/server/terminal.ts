@@ -5,6 +5,7 @@ import { db } from "~/db";
 import { agents, machines } from "~/db/schema";
 import { getRuntimeForMachine } from "~/server/machine-registry";
 import { toErrorMessage } from "~/lib/errors";
+import { shellEscape } from "~/server/transports/ssh";
 
 const TERMINAL_PATH_RE = /^\/ws\/terminal\/([^/]+)\/([^/]+)$/;
 
@@ -17,6 +18,10 @@ export function attachTerminalWebSocket(server: Server): void {
 
     const agentName = match[1]!;
     const sessionName = match[2]!;
+    if (!/^[a-zA-Z0-9_-]+$/.test(agentName) || !/^[a-zA-Z0-9_-]+$/.test(sessionName)) {
+      socket.destroy();
+      return;
+    }
     wss.handleUpgrade(req, socket, head, (ws) => {
       handleConnection(ws, agentName, sessionName);
     });
@@ -95,18 +100,21 @@ async function handleConnection(ws: WebSocket, agentName: string, sessionName: s
             return;
           }
           if (ctrl.type === "kill-session" && typeof ctrl.sessionName === "string") {
-            transport.exec(["runuser", "-l", "dev", "-c", `tmux kill-session -t '${ctrl.sessionName}' 2>/dev/null`]).catch(() => {});
+            if (/^[a-zA-Z0-9_-]+$/.test(ctrl.sessionName)) {
+              transport.exec(["runuser", "-l", "dev", "-c", `tmux kill-session -t ${shellEscape(ctrl.sessionName)} 2>/dev/null`]).catch(() => {});
+            }
             return;
           }
           if (ctrl.type === "sync-sessions" && Array.isArray(ctrl.sessions)) {
-            const expected = new Set(ctrl.sessions as string[]);
+            const validSession = /^[a-zA-Z0-9_-]+$/;
+            const expected = new Set((ctrl.sessions as string[]).filter((s) => validSession.test(s)));
             transport.exec(["runuser", "-l", "dev", "-c", "tmux list-sessions -F '#{session_name}' 2>/dev/null"])
               .then((result) => {
                 if (result.exitCode !== 0) return;
                 const existing = result.stdout.trim().split("\n").filter(Boolean);
                 for (const s of existing) {
                   if (!expected.has(s)) {
-                    transport.exec(["runuser", "-l", "dev", "-c", `tmux kill-session -t '${s}' 2>/dev/null`]).catch(() => {});
+                    transport.exec(["runuser", "-l", "dev", "-c", `tmux kill-session -t ${shellEscape(s)} 2>/dev/null`]).catch(() => {});
                   }
                 }
               })

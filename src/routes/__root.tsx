@@ -64,6 +64,8 @@ function RootLayout() {
   useEffect(() => {
     if (isLocalMode()) return;
 
+    let subscription: { unsubscribe: () => void } | undefined;
+
     initSupabase().then((client) => {
       if (!client) return;
       setSupabase(client);
@@ -72,13 +74,15 @@ function RootLayout() {
         setUser(session?.user ?? null);
         setLoading(false);
       });
-      const {
-        data: { subscription },
-      } = client.auth.onAuthStateChange((_event, session) => {
+      const { data } = client.auth.onAuthStateChange((_event, session) => {
         setUser(session?.user ?? null);
       });
-      return () => subscription.unsubscribe();
+      subscription = data.subscription;
     });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
 
   const isPublicRoute =

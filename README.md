@@ -51,6 +51,78 @@ If your project runs `docker compose up` with Postgres, Redis, or a microservice
 
 dindang creates a Docker container per agent, clones your repo, installs the AI CLI, and runs your project's setup command. A WebSocket bridge streams each terminal to the browser. Each container gets `COMPOSE_PROJECT_NAME` set to the agent name, so any Docker Compose services the project needs are fully isolated per agent. Credentials are encrypted at rest.
 
+## Machine Types
+
+dindang supports three machine types. You can mix and match them — run some agents locally and others on remote servers.
+
+### Local Docker (default)
+
+Agents run as Docker containers on the same machine as dindang. This is the zero-config option — no SSH keys or remote servers needed.
+
+**How it works:** dindang talks to the Docker daemon via the Docker socket (`/var/run/docker.sock`). Each agent gets its own container with an isolated filesystem, network namespace, and `COMPOSE_PROJECT_NAME`.
+
+**Setup:** The Quick Start above is all you need. The default `docker-compose.yml` mounts the Docker socket and sets `DINDANG_MODE=local`. A "Local Docker" machine is auto-created on first run.
+
+**Requirements:**
+- Docker installed on the host
+- The dindang container (or dev server) must have access to the Docker socket
+
+### Server (Docker over SSH)
+
+Agents run as Docker containers on a remote machine. dindang SSHes into the remote host, creates containers via `docker` CLI commands, and streams the terminal back to your browser.
+
+**How it works:** dindang establishes an SSH connection to the remote host, runs `docker create`/`docker exec` commands, and tunnels PTY streams over SSH. The remote machine needs Docker installed — dindang handles everything else.
+
+**Setup:**
+
+1. Ensure the remote machine has Docker installed and running
+2. Ensure the SSH user can run `docker` commands (add them to the `docker` group or use root)
+3. In dindang, go to **Settings > Machines** and add a new machine:
+   - **Type:** Server
+   - **Host:** IP address or hostname of the remote machine
+   - **Port:** SSH port (default 22)
+   - **Username:** SSH user
+   - **Auth method:** SSH key (paste your private key) or password
+4. Select the new machine when creating agents
+
+**Requirements:**
+- Docker installed on the remote machine
+- SSH access with a user that can run `docker` commands
+- Network connectivity from dindang to the remote host on the SSH port
+- For dev server preview: the remote machine's dev port must be reachable from the browser
+
+### Terminal (direct SSH)
+
+Agents run directly on a remote machine via SSH — no Docker on the remote side. dindang SSHes in and gives you a terminal session. Useful for machines where you can't or don't want to install Docker.
+
+**How it works:** dindang establishes an SSH connection and opens a PTY shell. The agent runs directly in the remote user's environment with tmux for session management.
+
+**Setup:**
+
+1. In dindang, go to **Settings > Machines** and add a new machine:
+   - **Type:** Terminal
+   - **Host:** IP address or hostname
+   - **Port:** SSH port (default 22)
+   - **Username:** SSH user
+   - **Auth method:** SSH key or password
+2. Select the machine when creating agents
+
+**Requirements:**
+- SSH access to the remote machine
+- `tmux` installed on the remote machine
+- The AI CLI (Claude Code, Codex, etc.) should be pre-installed on the remote machine, or the setup command in your project config should install it
+
+### Comparison
+
+| | Local Docker | Server | Terminal |
+|---|---|---|---|
+| Remote host Docker required | No (runs locally) | Yes | No |
+| Container isolation | Yes | Yes | No |
+| Infrastructure namespace | Yes (`COMPOSE_PROJECT_NAME`) | Yes | No |
+| SSH required | No | Yes | Yes |
+| Dev server preview | Via published port | Via remote host:port | Manual |
+| Best for | Single-machine setups | Scaling to remote GPU/cloud machines | Lightweight SSH access |
+
 ## Development
 
 ```bash

@@ -93,6 +93,10 @@ async function shutdownContainers(): Promise<void> {
     );
 
     const stopped = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    for (const f of failed) {
+      console.error("[lifecycle] failed to stop agent:", f.reason);
+    }
     console.log(`[lifecycle] shutdown complete — processed ${stopped}/${allAgents.length} agents`);
   } catch (e) {
     console.error("[lifecycle] shutdown error:", e);

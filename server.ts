@@ -8,7 +8,7 @@
  */
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { NodeRequest, sendNodeResponse } from "srvx/node";
 import { attachTerminalWebSocket } from "./src/server/terminal.ts";
 import { agentHooksMiddleware } from "./src/server/agent-hooks.ts";
@@ -44,7 +44,14 @@ function tryServeStatic(
   const url = req.url ?? "/";
   if (url.startsWith("/_serverFn") || url.startsWith("/api/")) return false;
 
-  const filePath = join(DIST_CLIENT, url === "/" ? "index.html" : url);
+  let normalized: string;
+  try {
+    normalized = url === "/" ? "index.html" : decodeURIComponent(url);
+  } catch {
+    return false;
+  }
+  const filePath = resolve(DIST_CLIENT, normalized.replace(/^\/+/, ""));
+  if (!filePath.startsWith(DIST_CLIENT)) return false;
   try {
     const data = readFileSync(filePath);
     const ext = filePath.slice(filePath.lastIndexOf("."));

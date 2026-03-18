@@ -1,4 +1,5 @@
 import type { Transport, ExecResult, PTYOptions, PTYSession } from "~/lib/transport";
+import { shellEscape } from "./ssh";
 
 export class ServerTransport implements Transport {
   constructor(
@@ -36,7 +37,7 @@ export class ServerTransport implements Transport {
     const cwd = options?.cwd ?? "/home/dev";
     const session = options?.sessionName ?? "main";
     pty.stream.write(
-      `docker exec -it -u dev -w ${cwd} -e HOME=/home/dev -e TERM=xterm-256color -e LANG=en_US.UTF-8 -e LC_ALL=en_US.UTF-8 -e PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin ${this.containerId} tmux new-session -As ${session} -c ${cwd}\n`
+      `docker exec -it -u dev -w ${shellEscape(cwd)} -e HOME=/home/dev -e TERM=xterm-256color -e LANG=en_US.UTF-8 -e LC_ALL=en_US.UTF-8 -e PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin ${shellEscape(this.containerId)} tmux new-session -As ${shellEscape(session)} -c ${shellEscape(cwd)}\n`
     );
 
     return pty;
@@ -44,11 +45,11 @@ export class ServerTransport implements Transport {
 
   async writeFile(path: string, content: string, mode?: number): Promise<void> {
     const b64 = Buffer.from(content).toString("base64");
-    const escapedPath = path.replace(/'/g, "'\\''");
-    const modeCmd = mode ? ` && chmod ${mode.toString(8)} '${escapedPath}'` : "";
+    const escapedPath = shellEscape(path);
+    const modeCmd = mode ? ` && chmod ${mode.toString(8)} ${escapedPath}` : "";
     await this.ssh.exec([
       "docker", "exec", this.containerId,
-      "bash", "-c", `echo '${b64}' | base64 -d > '${escapedPath}'${modeCmd}`,
+      "bash", "-c", `echo '${b64}' | base64 -d > ${escapedPath}${modeCmd}`,
     ]);
   }
 

@@ -14,7 +14,7 @@ export interface SSHConnectionOptions {
   password?: string;
 }
 
-function shellEscape(s: string): string {
+export function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 

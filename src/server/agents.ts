@@ -10,7 +10,7 @@ import { deriveKey, decrypt } from "~/lib/crypto";
 import { randomName } from "~/lib/names";
 import { toErrorMessage } from "~/lib/errors";
 import type { Agent } from "~/lib/types";
-import type { ExecResult } from "~/lib/transport";
+import type { ExecResult, Transport } from "~/lib/transport";
 
 async function getAgentByName(name: string, orgId: string) {
   const result = await db
@@ -173,10 +173,12 @@ export const createAgent = createServerFn({ method: "POST" })
 
     // Background setup — don't await
     const callbackUrl = process.env.DINDANG_CALLBACK_URL ?? "http://host.docker.internal:3000";
+    let setupTransport: Transport | undefined;
     runtime
       .getTransport(remoteId)
-      .then((transport) =>
-        setupAgent(transport, {
+      .then((transport) => {
+        setupTransport = transport;
+        return setupAgent(transport, {
           name,
           repoUrl,
           workDir,
@@ -184,8 +186,8 @@ export const createAgent = createServerFn({ method: "POST" })
           setupCommand: project.setupCommand ?? undefined,
           aiCli: project.aiCli,
           callbackUrl,
-        }),
-      )
+        });
+      })
       .then(async () => {
         await db.update(agents).set({ status: "ready", errorMessage: null }).where(eq(agents.id, agentRecord.id));
       })
@@ -195,6 +197,9 @@ export const createAgent = createServerFn({ method: "POST" })
         await db.update(agents).set({ status: "error", errorMessage: msg }).where(eq(agents.id, agentRecord.id));
         // Stop the container so it doesn't sit idle eating resources
         try { await runtime.stop(remoteId); } catch { /* best effort */ }
+      })
+      .finally(async () => {
+        try { await setupTransport?.destroy(); } catch { /* best effort */ }
       });
 
     return rowToAgent(agentRecord);
@@ -346,10 +351,12 @@ export const redeployAgent = createServerFn({ method: "POST" })
     // Re-run setup in background (system packages and user are in the container layer, not the volume)
     const repoUrl = project?.repoUrl ? validateRepoUrl(project.repoUrl) : undefined;
     const callbackUrl = process.env.DINDANG_CALLBACK_URL ?? "http://host.docker.internal:3000";
+    let setupTransport: Transport | undefined;
     runtime
       .getTransport(remoteId)
-      .then((transport) =>
-        setupAgent(transport, {
+      .then((transport) => {
+        setupTransport = transport;
+        return setupAgent(transport, {
           name: agent.name,
           repoUrl,
           workDir: agent.workDir ?? "/home/dev",
@@ -357,8 +364,8 @@ export const redeployAgent = createServerFn({ method: "POST" })
           setupCommand: project?.setupCommand ?? undefined,
           aiCli: project?.aiCli ?? "claude",
           callbackUrl,
-        }),
-      )
+        });
+      })
       .then(async () => {
         await db.update(agents).set({ status: "ready", errorMessage: null }).where(eq(agents.id, agent.id));
       })
@@ -367,6 +374,9 @@ export const redeployAgent = createServerFn({ method: "POST" })
         console.error(`[agent] redeploy setup failed for ${agent.name}:`, msg);
         await db.update(agents).set({ status: "error", errorMessage: msg }).where(eq(agents.id, agent.id));
         try { await runtime.stop(remoteId); } catch { /* best effort */ }
+      })
+      .finally(async () => {
+        try { await setupTransport?.destroy(); } catch { /* best effort */ }
       });
 
     return rowToAgent({ ...agent, remoteId, hostPort: hostPort ?? null, status: "provisioning" });

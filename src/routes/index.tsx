@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { listAgents, createAgent, removeAgent, redeployAgent, renameAgent, setAgentColor } from "~/server/agents";
 import { listProjects, listMachinesApi } from "~/server/settings";
 import { AgentCard } from "~/components/agent-card";
@@ -58,8 +58,8 @@ function Dashboard() {
     return () => clearInterval(interval);
   }, [hasActive, router]);
 
-  const projectMap = new Map(projects.map((p: Project) => [p.id, p.name]));
-  const projectCliMap = new Map(projects.map((p: Project) => [p.id, p.aiCli]));
+  const projectMap = useMemo(() => new Map(projects.map((p: Project) => [p.id, p.name])), [projects]);
+  const projectCliMap = useMemo(() => new Map(projects.map((p: Project) => [p.id, p.aiCli])), [projects]);
 
   return (
     <div className="max-w-6xl mx-auto p-6">

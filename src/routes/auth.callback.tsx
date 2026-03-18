@@ -16,10 +16,12 @@ function AuthCallback() {
       return;
     }
 
+    let subscription: { unsubscribe: () => void } | undefined;
+
     initSupabase().then((supabase) => {
       if (!supabase) return;
 
-      supabase.auth.onAuthStateChange(async (event, session) => {
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === "SIGNED_IN") {
           if (session?.provider_token) {
             try {
@@ -33,7 +35,12 @@ function AuthCallback() {
           navigate({ to: "/" });
         }
       });
+      subscription = data.subscription;
     });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, [navigate]);
 
   return (

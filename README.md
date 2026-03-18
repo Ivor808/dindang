@@ -13,11 +13,12 @@ Spawn agents that clone your repo, set up the project, and work independently on
 ## Quick Start
 
 ```bash
-curl -O https://raw.githubusercontent.com/Ivor808/dindang/master/docker-compose.yml
-docker compose up
+curl -fsSL https://raw.githubusercontent.com/Ivor808/dindang/master/install.sh | sh
 ```
 
 Open [http://localhost:3000](http://localhost:3000). Requires [Docker](https://docs.docker.com/get-docker/).
+
+Run the same command again to update to the latest version.
 
 ## Features
 
